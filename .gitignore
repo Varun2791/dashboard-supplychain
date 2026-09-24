@@ -1,0 +1,49 @@
+# Python / backend
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage*
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/coverage/
+*.local
+
+# Session temp + uploads + exports (ADR-028; never committed)
+.tmp/
+sessions/
+uploads/
+exports/
+*.csv.upload
+*.raw.csv
+
+# DataCo reference dataset + archives (ADR-024; obtained separately, never committed)
+*[Dd]ata[Cc]o*
+*tokenized_access_logs*
+sources/
+*.zip
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+
+# Environment + secrets
+.env
+.env.*
+!.env.example
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
