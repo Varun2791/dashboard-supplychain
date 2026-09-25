@@ -778,6 +778,15 @@ Phases 8+ are increasingly cross-file: canonical construction, the KPI engine, a
 - Privacy: no `.tmp/`, session, raw-upload, personal-field, or key content in generated state; no `--deep`; no Trail Brain; no MCP.
 - Verdict: CONTINUE PILOT.
 
+### Amendment (2026-09-25) — pilot extended to global OpenCode MCP
+
+The CLI-only pilot demonstrated sufficient structural value (four findings cross-checked correct against source, §Pilot evidence above) to extend the pilot to OpenCode MCP integration. This amendment supersedes exactly two Decision bullets above — "CLI-only use" and the "MCP server registration" prohibition — which now read:
+
+- Graft is admitted as a **PILOT** only: CLI plus global OpenCode MCP use against committed code, structural/local build only. Status remains PILOT; nothing here constitutes permanent adoption.
+- MCP is permitted **only** as a global OpenCode local server: pinned command `npx -y @nanonets/graft@0.19.0 mcp <repo-root>` in the machine-level OpenCode config, with `DO_NOT_TRACK=1` set for the server process and no provider credentials configured. Prohibited forms remain prohibited: project `.mcp.json`, project OpenCode config, `graft init` in any form, AGENTS.md/rule-file injection, `--deep`, Trail Brain, cloud/source upload.
+
+All other ADR-034 provisions stand unchanged: structural/local use only, telemetry disabled (verified post-integration), locator/explainer authority only, direct-read requirement, authority hierarchy, ignored/local generated state, and the measurable success criteria (extended with: server visible after restart, structural tools callable, telemetry still off, no source-content transmission, cross-checks pass). The pinned repo-root argument scopes this global entry to the dashboard workstation pilot; sessions in other projects would query this repo's graph, so any multi-project use requires a new decision. Rollback additionally requires removing the MCP entry from the global OpenCode config and restarting OpenCode (full procedure recorded in the integration report, not here).
+
 ---
 
 ## ADR-035 — Ponytail minimalism-review pilot (global, lite default)
