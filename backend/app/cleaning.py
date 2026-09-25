@@ -32,6 +32,8 @@ authorization — only ``Auto-transform: yes`` does):
   (net stays authoritative, negatives retained per ADR-017),
   DQ-CAT-001/002/003 (unknown enums never coerced — values retained exactly,
   whitespace trim aside), DQ-GRAIN-001 (no first-row pick),
+  DQ-GRAIN-003/DQ-GRAIN-004 (no representative product/customer value,
+  ADR-036),
   DQ-BUSINESS-002/003 (day fields authoritative per ADR-015;
   ``Late_delivery_risk`` audit-only per ADR-018/030).
 - UNCHANGED (informational, no action): DQ-KEY-002/003, DQ-DATE-004.
@@ -78,12 +80,14 @@ Outputs (all under ``derived/``; ``raw.csv`` never written):
   reconciliation (trim-only cleaning must not move totals), and output
   identity. The public ``GET cleaning-report`` projects ``steps`` exactly.
 
-Lifecycle: success advances ``CLEANING -> CANONICALIZING`` and stops (no
-canonicalization runs here — Phase 8 owns it). Travelling ERRORs
-(DQ-KEY-001, DQ-DATE-001, DQ-GRAIN-001) name the exact downstream stage they
-gate and travel with the session; they do not stop cleaning, mirroring the
-Phase-6 precedent. Terminal failure follows ADR-028 (raw/derived removal,
-manifest-only error metadata).
+Lifecycle: success advances ``CLEANING -> CANONICALIZING`` and chains the
+Phase-8 canonicalization worker inline, so cleaned sessions settle at
+ANALYZING (or park at CANONICALIZING behind a governed quality gate).
+Travelling ERRORs
+(DQ-KEY-001, DQ-DATE-001, DQ-GRAIN-001, DQ-GRAIN-003, DQ-GRAIN-004) name the
+exact downstream stage they gate and travel with the session; they do not
+stop cleaning, mirroring the Phase-6 precedent. Terminal failure follows
+ADR-028 (raw/derived removal, manifest-only error metadata).
 
 Execution model: synchronous workers run through the existing
 framework-local post-response runner (chained from profiling). Single
@@ -459,6 +463,9 @@ def ensure_cleaned(
                     f"{session_store.DERIVED_DIRNAME}/"
                     f"{session_store.CLEANING_ARTIFACT_FILENAME}"
                 ),
+                # A torn manifest carrying a stale canonical pointer must
+                # rebuild it, never adopt it.
+                "canonicalArtifact": None,
                 "error": None,
                 "updatedAt": now_iso,
                 "lastAccessedAt": now_iso,
@@ -672,6 +679,8 @@ def ensure_cleaned(
                 f"{session_store.DERIVED_DIRNAME}/"
                 f"{session_store.CLEANING_ARTIFACT_FILENAME}"
             ),
+            # Fresh cleaning output invalidates any downstream build.
+            "canonicalArtifact": None,
             "error": None,
             "updatedAt": now_iso,
             "lastAccessedAt": now_iso,
@@ -707,9 +716,12 @@ _CLEANING_IN_PROGRESS: set[str] = set()
 def run_cleaning(session_id: str) -> SessionManifest | None:
     """Execute one cleaning pass for a session (pipeline/recovery body).
 
-    Safe against reset races: a deleted session (no manifest) is a no-op
-    and is never resurrected. Returns the resulting manifest, or None when
-    there was nothing to do.
+    On success the Phase-8 canonicalization worker is chained inline (same
+    framework-local runner): cleaned sessions therefore settle at ANALYZING
+    once both steps complete, or park at CANONICALIZING behind a governed
+    quality gate. Safe against reset races: a deleted session (no manifest)
+    is a no-op and is never resurrected. Returns the resulting manifest, or
+    None when there was nothing to do.
     """
     if not session_store.is_valid_session_id(session_id):
         return None
@@ -721,7 +733,14 @@ def run_cleaning(session_id: str) -> SessionManifest | None:
         manifest = session_store.read_manifest(paths)
         if manifest is None:
             return None
-        return ensure_cleaned(paths, manifest, session_store.utcnow_naive_iso())
+        result = ensure_cleaned(paths, manifest, session_store.utcnow_naive_iso())
+        if result.state == STATE_CANONICALIZING and result.cleaningArtifact is not None:
+            # Local import: canonicalization owns the reverse dependency.
+            from app.canonicalization import run_canonicalization
+
+            canonicalized = run_canonicalization(session_id)
+            return canonicalized if canonicalized is not None else result
+        return result
     finally:
         _CLEANING_IN_PROGRESS.discard(session_id)
 

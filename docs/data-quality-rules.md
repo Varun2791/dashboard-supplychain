@@ -56,7 +56,7 @@ Pipeline stages referenced: `INGESTION · SCHEMA_MAPPING · PROFILING · CLEANIN
 
 | Rule | Name | Detection logic | Severity | Blocks | Treatment | Auto-transform |
 |---|---|---|---|---|---|---|
-| DQ-DATE-001 | Order timestamp parseable | month-first parse of `order date (DateOrders)` fails | ERROR | KPI_ANALYSIS for affected rows (rows excluded from date-binned KPIs; file-wide failure blocks CANONICALIZATION) | flagged | no |
+| DQ-DATE-001 | Order timestamp parseable | month-first parse of `order date (DateOrders)` fails | ERROR | KPI_ANALYSIS for affected rows (rows excluded from date-binned KPIs; file-wide failure — the upload contains data rows but zero parseable governed order timestamps — blocks CANONICALIZATION) | flagged | no |
 | DQ-DATE-002 | Ship timestamp parseable | month-first parse of `shipping date (DateOrders)` fails | WARNING | none (evidence field only) | flagged | no |
 | DQ-DATE-003 | Ship ≥ order evidence | `ship_timestamp < order_timestamp` | WARNING | none (KPI uses day fields regardless) | flagged | no |
 | DQ-DATE-004 | Same-Day pattern noted | Same-Day rows with ~12 h timestamp gaps | INFO | none | unchanged | no |
@@ -86,6 +86,8 @@ Pipeline stages referenced: `INGESTION · SCHEMA_MAPPING · PROFILING · CLEANIN
 |---|---|---|---|---|---|---|
 | DQ-GRAIN-001 | Order-invariance holds | same `order_id` disagrees on status/mode/dates/days/customer/destination | ERROR | CANONICALIZATION (`orders` build; no first-row pick) | flagged | no |
 | DQ-GRAIN-002 | Totals reconcile | Σ(items)→orders vs Σ(items)→dataset differ beyond $0.01×lines tolerance | ERROR | KPI_ANALYSIS (totals must reconcile first) | flagged | no |
+| DQ-GRAIN-003 | Product-invariance holds | same `product_id` disagrees on `category_id`/`department_name`/`category_name`/`product_name` (≥2 distinct non-missing stripped values; missing vs one value is not a conflict; `unit_price` never invariant) | ERROR | CANONICALIZATION (`products` build; no representative value) | flagged | no |
+| DQ-GRAIN-004 | Customer-invariance holds | same `customer_id` disagrees on `customer_segment` (≥2 distinct non-missing stripped values; missing vs one value is not a conflict) | ERROR | CANONICALIZATION (`customers_sanitized` build; no representative segment) | flagged | no |
 
 ### DQ-BUSINESS — business-rule validation (results, not repairs)
 

@@ -16,12 +16,15 @@ from pydantic import BaseModel, Field
 # to CLEANING on success or FAILED on an unparseable body; Phase 7 advances
 # CLEANING sessions to CANONICALIZING on success (parking there without
 # performing canonicalization) or FAILED on terminal cleaning failure.
-# ANALYZING/READY belong to Phases 8-9.
+# Phase 8 advances CANONICALIZING sessions to ANALYZING on success (parking
+# there without performing KPI analysis) while governed quality blocks keep
+# the session parked at CANONICALIZING. READY belongs to Phase 9.
 STATE_UPLOADING = "UPLOADING"
 STATE_VALIDATING = "VALIDATING"
 STATE_PROFILING = "PROFILING"
 STATE_CLEANING = "CLEANING"
 STATE_CANONICALIZING = "CANONICALIZING"
+STATE_ANALYZING = "ANALYZING"
 STATE_FAILED = "FAILED"
 STATE_EXPIRED = "EXPIRED"
 
@@ -152,6 +155,7 @@ class SessionManifest(BaseModel):
     schemaArtifact: str | None = None
     profileArtifact: str | None = None
     cleaningArtifact: str | None = None
+    canonicalArtifact: str | None = None
 
 
 class SchemaFieldMapping(BaseModel):
@@ -273,6 +277,27 @@ class InvarianceConflicts(BaseModel):
     byField: list[InvarianceFieldConflicts]
 
 
+class DimensionFieldConflicts(BaseModel):
+    """Per-field dimension-invariance conflict count (keys affected)."""
+
+    field: str
+    conflictingKeys: int
+
+
+class DimensionInvarianceConflicts(BaseModel):
+    """Product/customer-grain consistency summary (counts only).
+
+    Kept separate from the order-grain `InvarianceConflicts` model so no
+    population is misrepresented: `keysChecked` counts distinct non-missing
+    dimension keys, `conflictingKeys` counts keys with ≥2 distinct
+    non-missing governed values in at least one invariant attribute.
+    """
+
+    keysChecked: int
+    conflictingKeys: int
+    byField: list[DimensionFieldConflicts]
+
+
 class ProfileData(BaseModel):
     """`GET /sessions/{id}/profile` payload (contract-exact shape).
 
@@ -288,6 +313,8 @@ class ProfileData(BaseModel):
     cardinality: list[ProfileCardinality]
     duplicates: ProfileDuplicates
     invarianceConflicts: InvarianceConflicts
+    productInvarianceConflicts: DimensionInvarianceConflicts
+    customerInvarianceConflicts: DimensionInvarianceConflicts
 
 
 class ProfileResponse(BaseModel):
@@ -452,3 +479,60 @@ class CleaningArtifact(BaseModel):
     outputBytes: int
     outputRows: int
     cleanedAt: str
+
+
+class CanonicalTableIdentity(BaseModel):
+    """One persisted canonical table: relative path, rows, SHA, columns."""
+
+    name: str  # e.g. "derived/canonical_order_items.csv"
+    table: str  # e.g. "order_items"
+    rows: int
+    sha256: str
+    columns: list[str]
+
+
+class CanonicalBlocker(BaseModel):
+    """Governed quality gate that parked the build (counts only, no values)."""
+
+    # DUPLICATE_ITEM_KEY | ORDER_INVARIANCE_CONFLICT |
+    # PRODUCT_INVARIANCE_CONFLICT | CUSTOMER_INVARIANCE_CONFLICT | DQ-DATE-001
+    code: str
+    stage: str  # always CANONICALIZING for Phase-8 gates
+    scope: str  # canonical entity(s) blocked, e.g. "order_items" or "orders"
+    detail: str  # governed-field counts only, never cell values
+
+
+class CanonicalReconciliation(BaseModel):
+    """Item-aggregate reconciliation (sums/counts only; no KPI math)."""
+
+    itemRows: int
+    itemsWithOrder: int
+    orderCount: int | None  # None when the orders build is blocked
+    linesInOrders: int | None
+    foreignKeysReconcile: bool | None  # None when orders are blocked
+    totalsReconcile: bool | None  # None when orders are blocked
+
+
+class CanonicalArtifact(BaseModel):
+    """Derived `canonical_report.json`: build identity + gates (counts only).
+
+    Internal superset: no public endpoint serves it in Phase 8. Stores
+    per-table identity, blocker evidence, reconciliation, applied
+    derivations, versions, and timestamps — never row contents, cell values,
+    or personal fields.
+    """
+
+    sessionId: str
+    appVersion: str
+    schemaVersion: int
+    sourceSha256: str
+    sourceRows: int
+    inputProfiledAt: str
+    inputCleanedAt: str
+    status: str  # "complete" | "blocked"
+    blocker: CanonicalBlocker | None
+    tables: list[CanonicalTableIdentity]
+    reconciliation: CanonicalReconciliation
+    derivations: list[str]
+    notes: list[str]
+    canonicalizedAt: str

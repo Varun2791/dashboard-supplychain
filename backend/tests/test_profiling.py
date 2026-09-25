@@ -106,12 +106,12 @@ def read_artifact(session_root: str, session_id: str) -> dict:
         return json.load(handle)
 
 
-def test_clean_fixture_settles_at_canonicalizing_with_only_privacy_info(
+def test_clean_fixture_settles_at_analyzing_with_only_privacy_info(
     client: TestClient, session_root: str
 ) -> None:
     session_id = upload_ok(client, CLEAN_BYTES)
     status = client.get(f"/api/v1/sessions/{session_id}/status")
-    assert status.json()["data"]["state"] == "CANONICALIZING"
+    assert status.json()["data"]["state"] == "ANALYZING"
     quality = client.get(f"/api/v1/sessions/{session_id}/data-quality")
     assert quality.status_code == 200
     issues = quality.json()["data"]["issues"]
@@ -136,6 +136,8 @@ def test_profile_endpoint_returns_contract_shape(
         "cardinality",
         "duplicates",
         "invarianceConflicts",
+        "productInvarianceConflicts",
+        "customerInvarianceConflicts",
     }
     assert data["rows"] == 4
     assert data["columns"] == 25  # 18 required + 7 optional mapped fields
@@ -247,7 +249,7 @@ def test_repeated_order_id_is_legitimate_but_dup_item_id_is_not(
     )
     session_id = upload_ok(client, craft_csv([first, second]))
     status = client.get(f"/api/v1/sessions/{session_id}/status")
-    assert status.json()["data"]["state"] == "CANONICALIZING"
+    assert status.json()["data"]["state"] == "ANALYZING"
     quality = client.get(f"/api/v1/sessions/{session_id}/data-quality").json()["data"]
     by_rule = {issue["ruleId"]: issue for issue in quality["issues"]}
     assert "DQ-KEY-001" not in by_rule
@@ -400,7 +402,7 @@ def test_latin1_encoding_profiles(client: TestClient, session_root: str) -> None
         pass
     session_id = upload_ok(client, content)
     status = client.get(f"/api/v1/sessions/{session_id}/status")
-    assert status.json()["data"]["state"] == "CANONICALIZING"
+    assert status.json()["data"]["state"] == "ANALYZING"
     profile = client.get(f"/api/v1/sessions/{session_id}/profile").json()["data"]
     assert profile["rows"] == 1
 
@@ -425,13 +427,23 @@ def test_inversion_derived_spellings_take_unknown_path(
             }
         )
         + ",Consumer",
-        valid_row(**{"Order Id": "SYN-ORDER-9303", "Order Item Id": "SYN-ITEM-9303"})
+        # Distinct customer: Corporate here is a per-line unknown enum only.
+        # Invariance conflicts are per-customer (DQ-GRAIN-004), so a lone
+        # Corporate row on its own customer cannot conflict with Consumer
+        # rows on other customers.
+        valid_row(
+            **{
+                "Order Id": "SYN-ORDER-9303",
+                "Order Item Id": "SYN-ITEM-9303",
+                "Customer Id": "SYN-CUST-933",
+            }
+        )
         + ",Corporate",
     ]
     session_id = upload_ok(client, (header + "\n" + "\n".join(rows) + "\n").encode())
     assert (
         client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
-        == "CANONICALIZING"
+        == "ANALYZING"
     )
     quality = client.get(f"/api/v1/sessions/{session_id}/data-quality").json()["data"]
     by_rule = {issue["ruleId"]: issue for issue in quality["issues"]}
@@ -453,3 +465,281 @@ def test_profiling_is_deterministic_across_sessions(
         del first_artifact[key]
         del second_artifact[key]
     assert first_artifact == second_artifact
+
+
+# ---------------------------------------------------------------------------
+# DQ-GRAIN-003 / DQ-GRAIN-004 dimension invariance (ADR-036, synthetic only)
+# ---------------------------------------------------------------------------
+
+DIM_HEADER = (
+    REQUIRED_HEADER + ",Customer Segment,Department Name,Category Name,Product Name"
+)
+
+DIM_FIELDS = (
+    "Customer Segment",
+    "Department Name",
+    "Category Name",
+    "Product Name",
+)
+
+
+def dim_row(valid_kwargs: dict[str, str] | None = None, **dims: str) -> str:
+    """One crafted line: required base plus the four optional dim columns."""
+    base = {
+        "Customer Segment": "Consumer",
+        "Department Name": "SYN-Dept",
+        "Category Name": "SYN-Category",
+        "Product Name": "SYN-Widget",
+    }
+    base.update(dims)
+    return (
+        valid_row(**(valid_kwargs or {}))
+        + ","
+        + ",".join(base[name] for name in DIM_FIELDS)
+    )
+
+
+def dim_csv(rows: list[str]) -> bytes:
+    return (DIM_HEADER + "\n" + "\n".join(rows) + "\n").encode()
+
+
+def dim_quality(client: TestClient, session_id: str) -> dict:
+    response = client.get(f"/api/v1/sessions/{session_id}/data-quality")
+    assert response.status_code == 200
+    return {issue["ruleId"]: issue for issue in response.json()["data"]["issues"]}
+
+
+def test_grain003_identical_dims_do_not_conflict(
+    client: TestClient, session_root: str
+) -> None:
+    rows = [
+        dim_row({"Order Id": "SYN-ORDER-9501", "Order Item Id": "SYN-ITEM-9501"}),
+        dim_row({"Order Id": "SYN-ORDER-9502", "Order Item Id": "SYN-ITEM-9502"}),
+    ]
+    session_id = upload_ok(client, dim_csv(rows))
+    assert (
+        client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
+        == "ANALYZING"
+    )
+    assert "DQ-GRAIN-003" not in dim_quality(client, session_id)
+
+
+def test_grain003_conflicting_category_id(
+    client: TestClient, session_root: str
+) -> None:
+    rows = [
+        dim_row({"Order Id": "SYN-ORDER-9511", "Order Item Id": "SYN-ITEM-9511"}),
+        dim_row(
+            {
+                "Order Id": "SYN-ORDER-9512",
+                "Order Item Id": "SYN-ITEM-9512",
+                "Product Category Id": "SYN-CAT-OTHER",
+            }
+        ),
+    ]
+    session_id = upload_ok(client, dim_csv(rows))
+    assert (
+        client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
+        == "CANONICALIZING"
+    )
+    by_rule = dim_quality(client, session_id)
+    issue = by_rule["DQ-GRAIN-003"]
+    assert issue["severity"] == "ERROR"
+    assert issue["treatment"] == "flagged"
+    assert issue["blockedStage"] == "CANONICALIZATION"
+    assert issue["count"] == 1
+    artifact = read_artifact(session_root, session_id)
+    assert "1" in artifact["issueMessages"]["DQ-GRAIN-003"]
+    # Counts only: the conflicting category values leak nowhere.
+    assert "SYN-CAT-OTHER" not in json.dumps(artifact)
+
+
+def test_grain003_conflicting_merch_names(
+    client: TestClient, session_root: str
+) -> None:
+    cases = [
+        ("Department Name", "SYN-Other-Dept"),
+        ("Category Name", "SYN-Other-Category"),
+        ("Product Name", "SYN-Other-Widget"),
+    ]
+    for field, other in cases:
+        rows = [
+            dim_row({"Order Id": "SYN-ORDER-9521", "Order Item Id": "SYN-ITEM-9521"}),
+            dim_row(
+                {"Order Id": "SYN-ORDER-9522", "Order Item Id": "SYN-ITEM-9522"},
+                **{field: other},
+            ),
+        ]
+        session_id = upload_ok(client, dim_csv(rows))
+        by_rule = dim_quality(client, session_id)
+        assert by_rule["DQ-GRAIN-003"]["count"] == 1, field
+        profile = client.get(f"/api/v1/sessions/{session_id}/profile").json()["data"]
+        detail = profile["productInvarianceConflicts"]
+        assert detail["keysChecked"] == 1
+        assert detail["conflictingKeys"] == 1
+
+
+def test_grain003_missing_vs_value_is_not_a_conflict(
+    client: TestClient, session_root: str
+) -> None:
+    rows = [
+        dim_row({"Order Id": "SYN-ORDER-9531", "Order Item Id": "SYN-ITEM-9531"}),
+        dim_row(
+            {"Order Id": "SYN-ORDER-9532", "Order Item Id": "SYN-ITEM-9532"},
+            **{"Product Name": ""},
+        ),
+    ]
+    session_id = upload_ok(client, dim_csv(rows))
+    assert (
+        client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
+        == "ANALYZING"
+    )
+    assert "DQ-GRAIN-003" not in dim_quality(client, session_id)
+
+
+def test_grain003_unit_price_variation_is_not_a_conflict(
+    client: TestClient, session_root: str
+) -> None:
+    """No reference-price concept exists: unit_price can never conflict."""
+    rows = [
+        dim_row({"Order Id": "SYN-ORDER-9541", "Order Item Id": "SYN-ITEM-9541"}),
+        dim_row(
+            {
+                "Order Id": "SYN-ORDER-9542",
+                "Order Item Id": "SYN-ITEM-9542",
+                "Order Item Product Price": "99.99",
+            }
+        ),
+    ]
+    session_id = upload_ok(client, dim_csv(rows))
+    assert (
+        client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
+        == "ANALYZING"
+    )
+    assert "DQ-GRAIN-003" not in dim_quality(client, session_id)
+
+
+def test_grain003_padding_only_difference_is_cat005_not_conflict(
+    client: TestClient, session_root: str
+) -> None:
+    """Stripped-text comparison: padding is CAT-005 trim fuel, not conflict."""
+    rows = [
+        dim_row({"Order Id": "SYN-ORDER-9551", "Order Item Id": "SYN-ITEM-9551"}),
+        dim_row(
+            {"Order Id": "SYN-ORDER-9552", "Order Item Id": "SYN-ITEM-9552"},
+            **{"Product Name": " SYN-Widget "},
+        ),
+    ]
+    session_id = upload_ok(client, dim_csv(rows))
+    assert (
+        client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
+        == "ANALYZING"
+    )
+    by_rule = dim_quality(client, session_id)
+    assert "DQ-GRAIN-003" not in by_rule
+    assert by_rule["DQ-CAT-005"]["treatment"] == "detected"
+
+
+def test_grain004_same_segment_does_not_conflict(
+    client: TestClient, session_root: str
+) -> None:
+    rows = [
+        dim_row({"Order Id": "SYN-ORDER-9561", "Order Item Id": "SYN-ITEM-9561"}),
+        dim_row({"Order Id": "SYN-ORDER-9562", "Order Item Id": "SYN-ITEM-9562"}),
+    ]
+    session_id = upload_ok(client, dim_csv(rows))
+    assert (
+        client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
+        == "ANALYZING"
+    )
+    assert "DQ-GRAIN-004" not in dim_quality(client, session_id)
+
+
+def test_grain004_conflicting_segments(client: TestClient, session_root: str) -> None:
+    rows = [
+        dim_row({"Order Id": "SYN-ORDER-9571", "Order Item Id": "SYN-ITEM-9571"}),
+        dim_row(
+            {"Order Id": "SYN-ORDER-9572", "Order Item Id": "SYN-ITEM-9572"},
+            **{"Customer Segment": "Home Office"},
+        ),
+    ]
+    session_id = upload_ok(client, dim_csv(rows))
+    assert (
+        client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
+        == "CANONICALIZING"
+    )
+    by_rule = dim_quality(client, session_id)
+    issue = by_rule["DQ-GRAIN-004"]
+    assert issue["severity"] == "ERROR"
+    assert issue["treatment"] == "flagged"
+    assert issue["blockedStage"] == "CANONICALIZATION"
+    assert issue["count"] == 1
+    profile = client.get(f"/api/v1/sessions/{session_id}/profile").json()["data"]
+    detail = profile["customerInvarianceConflicts"]
+    assert detail["keysChecked"] == 1
+    assert detail["conflictingKeys"] == 1
+    assert {
+        entry["field"]: entry["conflictingKeys"] for entry in detail["byField"]
+    } == {"customer_segment": 1}
+
+
+def test_grain004_missing_vs_value_is_not_a_conflict(
+    client: TestClient, session_root: str
+) -> None:
+    rows = [
+        dim_row({"Order Id": "SYN-ORDER-9581", "Order Item Id": "SYN-ITEM-9581"}),
+        dim_row(
+            {"Order Id": "SYN-ORDER-9582", "Order Item Id": "SYN-ITEM-9582"},
+            **{"Customer Segment": ""},
+        ),
+    ]
+    session_id = upload_ok(client, dim_csv(rows))
+    assert (
+        client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
+        == "ANALYZING"
+    )
+    assert "DQ-GRAIN-004" not in dim_quality(client, session_id)
+
+
+def test_grain004_unknown_segment_still_flags_without_repair(
+    client: TestClient, session_root: str
+) -> None:
+    """Corporate is unknown-domain (CAT-003, never coerced) AND a second
+    distinct segment value (GRAIN-004): independent findings, no repair."""
+    rows = [
+        dim_row({"Order Id": "SYN-ORDER-9591", "Order Item Id": "SYN-ITEM-9591"}),
+        dim_row(
+            {"Order Id": "SYN-ORDER-9592", "Order Item Id": "SYN-ITEM-9592"},
+            **{"Customer Segment": "Corporate"},
+        ),
+    ]
+    session_id = upload_ok(client, dim_csv(rows))
+    assert (
+        client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
+        == "CANONICALIZING"
+    )
+    by_rule = dim_quality(client, session_id)
+    assert by_rule["DQ-GRAIN-004"]["count"] == 1
+    assert by_rule["DQ-CAT-003"]["count"] == 1
+    assert by_rule["DQ-CAT-003"]["blockedStage"] is None
+
+
+def test_dimension_detail_shape_on_shared_issues_fixture(
+    client: TestClient, session_root: str
+) -> None:
+    profile = client.get(
+        f"/api/v1/sessions/{upload_ok(client, ISSUES_BYTES)}/profile"
+    ).json()["data"]
+    assert set(profile["productInvarianceConflicts"]) == {
+        "keysChecked",
+        "conflictingKeys",
+        "byField",
+    }
+    assert profile["productInvarianceConflicts"]["keysChecked"] == 2
+    assert profile["productInvarianceConflicts"]["conflictingKeys"] == 0
+    assert profile["customerInvarianceConflicts"]["keysChecked"] == 2
+    assert profile["customerInvarianceConflicts"]["conflictingKeys"] == 1
+    assert {
+        entry["field"]: entry["conflictingKeys"]
+        for entry in profile["customerInvarianceConflicts"]["byField"]
+    } == {"customer_segment": 1}

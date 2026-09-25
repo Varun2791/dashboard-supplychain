@@ -29,9 +29,11 @@ const CONTINUING_STATES = new Set([
   "VALIDATING",
   "PROFILING",
   "CLEANING",
+  "CANONICALIZING",
 ]);
-/** Settled state with schema, profile, quality, and cleaning reports ready. */
-const SETTLED_STATE = "CANONICALIZING";
+/** Settled states: ANALYZING (canonical tables built) or CANONICALIZING
+ * parked behind a governed quality gate (reports still readable). */
+const SETTLED_STATES = new Set(["ANALYZING", "CANONICALIZING"]);
 
 const ERROR_GUIDANCE: Record<string, string> = {
   EMPTY_FILE:
@@ -149,7 +151,8 @@ export default function UploadSession() {
 
   // Bounded status check: confirm the stored session state, then stop.
   // VALIDATING sessions resolve through schema validation on the server;
-  // a CANONICALIZING session loads its schema, profile, data-quality, and
+  // an ANALYZING session (or a CANONICALIZING session parked behind a
+  // governed quality gate) loads its schema, profile, data-quality, and
   // cleaning reports once each, a FAILED session surfaces its stored error.
   // Polling never waits for later stages.
   useEffect(() => {
@@ -171,7 +174,7 @@ export default function UploadSession() {
           setPollSettled(true);
           return;
         }
-        if (status.state === SETTLED_STATE) {
+        if (SETTLED_STATES.has(status.state)) {
           try {
             const [report, profileReport, qualityReport, cleaningReport] =
               await Promise.all([
@@ -495,8 +498,9 @@ export default function UploadSession() {
             >
               Profiling and audited cleaning are complete. Only the governed
               whitespace trim ran; anything else stayed as uploaded.
-              Canonicalization and analytics are not available in this build
-              yet.
+              {sessionState === "ANALYZING"
+                ? " Canonical tables are built; KPI analytics are not available in this build yet."
+                : " Canonicalization is gated (see below); KPI analytics are not available in this build yet."}
             </p>
           ) : null}
           {schema !== null ? (
@@ -610,11 +614,11 @@ export default function UploadSession() {
               ) ? (
                 <p>
                   Next stage: canonicalization is gated by unresolved errors
-                  above, so no canonical work has started. The session is parked
-                  until the input is fixed or replaced.
+                  above, so no complete canonical build exists. The session is
+                  parked until the input is fixed or replaced.
                 </p>
               ) : (
-                <p>Next stage: canonicalization.</p>
+                <p>Next stage: KPI analysis.</p>
               )}
             </div>
           ) : null}

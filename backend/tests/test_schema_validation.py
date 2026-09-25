@@ -121,10 +121,11 @@ def test_validation_completes_without_any_polling(
         session_store.session_paths(session_root, session_id)
     )
     assert manifest is not None
-    assert manifest.state == "CANONICALIZING"
+    assert manifest.state == "ANALYZING"
     assert manifest.schemaArtifact is not None
     assert manifest.profileArtifact is not None
     assert manifest.cleaningArtifact is not None
+    assert manifest.canonicalArtifact is not None
 
 
 def test_get_status_does_not_execute_validation(
@@ -169,7 +170,7 @@ def test_worker_rerun_is_harmless(client: TestClient, session_root: str) -> None
     session_id = upload_ok(client, FIXTURE_BYTES)
     manifest = run_schema_validation(session_id)
     assert manifest is not None
-    assert manifest.state == "CANONICALIZING"
+    assert manifest.state == "ANALYZING"
     paths = session_store.session_paths(session_root, session_id)
     assert os.path.isfile(os.path.join(paths.derived, "schema_report.json"))
     assert os.path.isfile(os.path.join(paths.derived, "profiling_report.json"))
@@ -180,7 +181,8 @@ def test_worker_rerun_is_harmless(client: TestClient, session_root: str) -> None
 def test_recover_validating_sessions_covers_crash_window(
     client: TestClient, session_root: str
 ) -> None:
-    """Startup recovery chains validation into profiling and cleaning."""
+    """Startup recovery chains validation into profiling, cleaning, and
+    canonicalization."""
     from datetime import datetime, timedelta
 
     os.makedirs(session_root, exist_ok=True)
@@ -201,7 +203,7 @@ def test_recover_validating_sessions_covers_crash_window(
     good_manifest = session_store.read_manifest(
         session_store.session_paths(session_root, good)
     )
-    assert good_manifest is not None and good_manifest.state == "CANONICALIZING"
+    assert good_manifest is not None and good_manifest.state == "ANALYZING"
     bad_manifest = session_store.read_manifest(
         session_store.session_paths(session_root, bad)
     )
@@ -210,21 +212,22 @@ def test_recover_validating_sessions_covers_crash_window(
     assert os.path.isdir(stale_paths.root)
 
 
-def test_compatible_fixture_advances_through_cleaning_to_canonicalizing(
+def test_compatible_fixture_advances_through_cleaning_to_analyzing(
     client: TestClient, session_root: str
 ) -> None:
     session_id = upload_ok(client, FIXTURE_BYTES)
     response = client.get(f"/api/v1/sessions/{session_id}/status")
     assert response.status_code == 200
     data = response.json()["data"]
-    assert data["state"] == "CANONICALIZING"
-    assert data["stage"] == "CANONICALIZING"
-    assert data["progress"]["currentStage"] == "CANONICALIZING"
+    assert data["state"] == "ANALYZING"
+    assert data["stage"] == "ANALYZING"
+    assert data["progress"]["currentStage"] == "ANALYZING"
     assert data["progress"]["completedStages"] == [
         "UPLOADING",
         "VALIDATING",
         "PROFILING",
         "CLEANING",
+        "CANONICALIZING",
     ]
     assert data["error"] is None
     paths = session_store.session_paths(session_root, session_id)
@@ -232,6 +235,9 @@ def test_compatible_fixture_advances_through_cleaning_to_canonicalizing(
     assert os.path.isfile(os.path.join(paths.derived, "profiling_report.json"))
     assert os.path.isfile(os.path.join(paths.derived, "cleaning_report.json"))
     assert os.path.isfile(os.path.join(paths.derived, "cleaned.csv"))
+    assert os.path.isfile(os.path.join(paths.derived, "canonical_report.json"))
+    assert os.path.isfile(os.path.join(paths.derived, "canonical_order_items.csv"))
+    assert os.path.isfile(os.path.join(paths.derived, "canonical_orders.csv"))
     assert os.path.isfile(paths.raw)  # compatible sessions keep raw
 
 
@@ -290,7 +296,7 @@ def test_extra_column_does_not_reject(client: TestClient, session_root: str) -> 
     lines[2] += ",Silver"
     session_id = upload_ok(client, "\n".join(lines).encode())
     status = client.get(f"/api/v1/sessions/{session_id}/status")
-    assert status.json()["data"]["state"] == "CANONICALIZING"
+    assert status.json()["data"]["state"] == "ANALYZING"
     schema = client.get(f"/api/v1/sessions/{session_id}/schema")
     data = schema.json()["data"]
     assert data["missingCritical"] == []

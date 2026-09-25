@@ -313,7 +313,7 @@ Suggested commit: `feat(cleaning): add reproducible audited transformations`
 
 ## Phase 8 — Canonical model construction
 
-**Status: NOT STARTED**
+**Status: [~] partially complete (implementation done; reference-file verification pending)**
 
 ### Objective
 
@@ -321,21 +321,23 @@ Create validated order, item, product, sanitized-customer, calendar, and quality
 
 ### Tasks
 
-- [ ] Build `order_items` using unique item IDs.
-- [ ] Validate order-level invariance before building `orders`.
-- [ ] Build products keyed by product ID.
-- [ ] Build sanitized customers without direct personal fields.
-- [ ] Build calendar attributes from order date.
-- [ ] Create nullable late status for cancelled shipments.
-- [ ] Preserve provenance from canonical records to source rows.
-- [ ] Reconcile item aggregates to order and dataset totals.
+- [x] Build `order_items` using unique item IDs. — `backend/app/canonicalization.py` (`build_order_items`); one row per governed line, PK `order_item_id`, 1-based `source_row_number` provenance; DQ-KEY-001 gates the whole build (no dedupe).
+- [x] Validate order-level invariance before building `orders`. — `order_gate_conflicts` over the 10 profiling invariance fields plus `customer_segment` and derived outcome agreement; DQ-GRAIN-001 blocks `orders` only (no first-row pick), other tables still build.
+- [x] Build products keyed by product ID. — `build_products`; identifying dims invariant-checked under DQ-GRAIN-003 (conflict blocks `products` only via PRODUCT_INVARIANCE_CONFLICT, ADR-036), defensible aggregations only, no reference price.
+- [x] Build sanitized customers without direct personal fields. — `build_customers`; segment invariant-checked under DQ-GRAIN-004 (conflict blocks `customers_sanitized` only via CUSTOMER_INVARIANCE_CONFLICT, ADR-036), coarse customer-side geo only (null in V1, never derived from destinations), PII/probe-tested.
+- [x] Build calendar attributes from order date. — `build_calendar`; naive date parts for distinct canonical `order_date` values, no KPI semantics.
+- [x] Create nullable late status for cancelled shipments. — §6 derivation from authoritative day fields; shipping-cancelled rows get `SHIPPING_CANCELED` + `is_late = null` + null variance/actual; `Late_delivery_risk` never classifies (probe-tested).
+- [x] Preserve provenance from canonical records to source rows. — `source_row_number` = 1-based logical data-row ordinal in `raw.csv` (positional correspondence with verified `cleaned.csv`); stored on `order_items` only, never a key.
+- [x] Reconcile item aggregates to order and dataset totals. — `orders`/`products`/`customers` summed from items exactly once; GRAIN-002 self-check (FK + money/unit totals) gates the ANALYZING transition; reported net stays authoritative, negative profit retained.
 
 ### Exit criteria
 
-- Reference output contains 180,519 items and 65,752 orders.
-- No order total is multiplied by its line count.
-- All canonical foreign keys reconcile.
-- Privacy-excluded fields are absent from analytical payloads.
+- [~] Reference output contains 180,519 items and 65,752 orders. — NOT YET EXECUTED. Same constraint as Phase 6: no local reference file exists (ADR-024); aggregation logic is verified on synthetic fixtures (multi-line orders reconcile exactly), but full-file counts await the documented reference run. No counts fabricated.
+- [x] No order total is multiplied by its line count. — Aggregations sum line values exactly once; `line_count` is a separate count; multi-line fixture asserts `net_value == 47.48 == 27.98 + 19.50`.
+- [x] All canonical foreign keys reconcile. — GRAIN-002 self-check (order-ID set equality + lines count + money/unit totals) enforced before ANALYZING; `test_report_reconciliation_and_identity` asserts all-true.
+- [x] Privacy-excluded fields are absent from analytical payloads. — PII/precise-geo/audit-only columns never materialize; probe tests assert absence in all six tables + report; exports untouched (Phase 16).
+
+Evidence: `make check` green (backend 212 tests — 39 new Phase-8 tests: derivations, blockers, integrity, concurrency, lifecycle; frontend 26 tests — 1 new ANALYZING-settled test; Ruff, format, mypy strict, tsc, ESLint 0 errors, Prettier, `vite build` green), live HTTP smoke with synthetic `/tmp` data only (clean → ANALYZING with 6 tables + reconciled report + stable raw SHA; duplicate-key → parked CANONICALIZING with raw retained; reset → trees gone). Lifecycle parks at ANALYZING (no KPI analysis runs; no READY faked). Also fixed as found: NaT/float rendering in canonical CSVs, stale downstream artifact pointers on upstream recompute, missing compute-phase guard, and a manifest CAS race (process-wide RLock) — each covered by a regression test.
 
 Suggested commit: `feat(model): build canonical supply-chain data model`
 

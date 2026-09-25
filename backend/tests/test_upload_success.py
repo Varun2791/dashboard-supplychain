@@ -136,19 +136,20 @@ def test_manifest_carries_safe_metadata_only(
     assert manifest.appVersion == settings.app_version
     assert manifest.schemaVersion == settings.schema_version
     assert manifest.bytes == len(COMPATIBLE_BYTES)
-    assert manifest.state == "CANONICALIZING"
-    assert manifest.stage == "CANONICALIZING"
+    assert manifest.state == "ANALYZING"
+    assert manifest.stage == "ANALYZING"
     assert manifest.error is None
     assert manifest.schemaArtifact is not None
     assert manifest.profileArtifact is not None
     assert manifest.cleaningArtifact is not None
+    assert manifest.canonicalArtifact is not None
     assert manifest.createdAt and manifest.lastAccessedAt
 
 
 def test_status_reports_validating_boundary(
     client: TestClient, session_root: str
 ) -> None:
-    """Phase-7 truth: incompatible schema fails, compatible reaches CANONICALIZING."""
+    """Phase-8 truth: incompatible schema fails, compatible reaches ANALYZING."""
     incompatible_id = post_csv(client, "orders.csv", VALID_CSV).json()["data"][
         "sessionId"
     ]
@@ -169,9 +170,9 @@ def test_status_reports_validating_boundary(
     ready = client.get(f"/api/v1/sessions/{compatible_id}/status")
     assert ready.status_code == 200
     ready_data = ready.json()["data"]
-    assert ready_data["state"] == "CANONICALIZING"
-    assert ready_data["stage"] == "CANONICALIZING"
-    assert ready_data["progress"]["currentStage"] == "CANONICALIZING"
+    assert ready_data["state"] == "ANALYZING"
+    assert ready_data["stage"] == "ANALYZING"
+    assert ready_data["progress"]["currentStage"] == "ANALYZING"
     assert "READY" not in ready_data["progress"]["completedStages"]
     assert ready_data["startedAt"] and ready_data["updatedAt"]
     assert ready_data["error"] is None

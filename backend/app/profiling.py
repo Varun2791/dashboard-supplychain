@@ -7,12 +7,14 @@ governed column projection), artifact persistence, lifecycle transitions,
 the post-response pipeline hook, and startup recovery.
 
 Lifecycle: success advances ``PROFILING -> CLEANING`` and chains the
-Phase-7 cleaning worker inline, so profiled sessions settle at
-CANONICALIZING; a malformed body fails terminally per DQ-FILE-005
+Phase-7 cleaning worker inline (which in turn chains Phase-8
+canonicalization), so profiled sessions settle at ANALYZING once all steps
+complete, or park at CANONICALIZING behind a governed quality gate; a
+malformed body fails terminally per DQ-FILE-005
 with ADR-028 raw/derived removal. ``ERROR`` findings on DQ-KEY-001,
-DQ-DATE-001, and DQ-GRAIN-001 name the exact downstream stage they gate
-and travel with the session through CLEANING; they do not stop profiling
-or cleaning.
+DQ-DATE-001, DQ-GRAIN-001, DQ-GRAIN-003, and DQ-GRAIN-004 name the exact
+downstream stage they gate and travel with the session through CLEANING;
+they do not stop profiling or cleaning.
 
 Execution model: these workers are synchronous and run through the
 existing framework-local post-response runner (``BackgroundTasks``).
@@ -54,13 +56,16 @@ from app.ingestion_errors import (
     IngestionError,
 )
 from app.profile_checks import (
+    CUSTOMER_INVARIANCE_FIELDS,
     INT_FIELDS,
     MONEY_FIELDS,
+    PRODUCT_INVARIANCE_FIELDS,
     RULE_ORDER,
     RULES_DEFERRED,
     TIMESTAMP_FIELDS,
     ProfileInputs,
     RuleResult,
+    dimension_invariance_by_key,
     evaluate_frame,
     invariance_by_field,
     missing_mask,
@@ -77,6 +82,8 @@ from app.schemas import (
     STATE_PROFILING,
     ApiErrorModel,
     DataQualityIssue,
+    DimensionFieldConflicts,
+    DimensionInvarianceConflicts,
     InvarianceConflicts,
     InvarianceFieldConflicts,
     ProfileCardinality,
@@ -250,6 +257,12 @@ def build_profile_data(
         if result.rule_id == "DQ-KEY-001":
             key_dupes = result.count
     orders_checked, conflicting, by_field = invariance_by_field(frame, inputs)
+    prod_checked, prod_conflicting, prod_by_field = dimension_invariance_by_key(
+        frame, inputs, "product_id", PRODUCT_INVARIANCE_FIELDS
+    )
+    cust_checked, cust_conflicting, cust_by_field = dimension_invariance_by_key(
+        frame, inputs, "customer_id", CUSTOMER_INVARIANCE_FIELDS
+    )
     return ProfileData(
         rows=rows,
         columns=len(inputs.col_of),
@@ -265,6 +278,22 @@ def build_profile_data(
                 for f, c in by_field.items()
             ],
         ),
+        productInvarianceConflicts=DimensionInvarianceConflicts(
+            keysChecked=prod_checked,
+            conflictingKeys=prod_conflicting,
+            byField=[
+                DimensionFieldConflicts(field=f, conflictingKeys=c)
+                for f, c in prod_by_field.items()
+            ],
+        ),
+        customerInvarianceConflicts=DimensionInvarianceConflicts(
+            keysChecked=cust_checked,
+            conflictingKeys=cust_conflicting,
+            byField=[
+                DimensionFieldConflicts(field=f, conflictingKeys=c)
+                for f, c in cust_by_field.items()
+            ],
+        ),
     )
 
 
@@ -273,6 +302,8 @@ def rules_evaluated(inputs: ProfileInputs) -> list[str]:
     evaluated = ["DQ-FILE-005"]  # the successful staging read is the check
     for rule_id in RULE_ORDER:
         if rule_id == "DQ-CAT-003" and "customer_segment" not in inputs.col_of:
+            continue
+        if rule_id == "DQ-GRAIN-004" and "customer_segment" not in inputs.col_of:
             continue
         if rule_id == "DQ-BUSINESS-003" and inputs.audit_header is None:
             continue
@@ -411,6 +442,11 @@ def ensure_profiled(
                     f"{session_store.DERIVED_DIRNAME}/"
                     f"{session_store.PROFILING_ARTIFACT_FILENAME}"
                 ),
+                # Downstream pointers never survive an upstream
+                # (re)decision: a torn manifest carrying a stale cleaning
+                # or canonical pointer must rebuild them, never adopt them.
+                "cleaningArtifact": None,
+                "canonicalArtifact": None,
                 "error": None,
                 "updatedAt": now_iso,
                 "lastAccessedAt": now_iso,
@@ -518,6 +554,9 @@ def ensure_profiled(
                 f"{session_store.DERIVED_DIRNAME}/"
                 f"{session_store.PROFILING_ARTIFACT_FILENAME}"
             ),
+            # A fresh profile invalidates everything downstream.
+            "cleaningArtifact": None,
+            "canonicalArtifact": None,
             "error": None,
             "updatedAt": now_iso,
             "lastAccessedAt": now_iso,
@@ -560,10 +599,12 @@ def run_profiling(session_id: str) -> SessionManifest | None:
     """Execute one profiling pass for a session (pipeline/recovery body).
 
     On success the Phase-7 cleaning worker is chained inline (same
-    framework-local runner): profiled sessions therefore settle at
-    CANONICALIZING once both steps complete. Safe against reset races: a
-    deleted session (no manifest) is a no-op and is never resurrected.
-    Returns the resulting manifest, or None when there was nothing to do.
+    framework-local runner, which in turn chains Phase-8 canonicalization):
+    profiled sessions therefore settle at ANALYZING once all steps complete
+    (or park at CANONICALIZING behind a governed quality gate). Safe against
+    reset races: a deleted session (no manifest) is a no-op and is never
+    resurrected. Returns the resulting manifest, or None when there was
+    nothing to do.
     """
     if not session_store.is_valid_session_id(session_id):
         return None

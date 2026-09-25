@@ -81,6 +81,8 @@ Order totals are aggregated from items exactly once; nothing multiplies a line v
 
 Only fields required for V1 analytics and defensible aggregations. No reference-price field (a median/mode unit price would be a new derived business concept with no V1 consumer).
 
+Built only after product-invariance validation passes (conflicts → `DQ-GRAIN-003`, `products` build blocked, no representative product attribute is selected).
+
 | Field | Type | Null | Class | Source / formula |
 |---|---|---|---|---|
 | `product_id` | string PK | NN | S | `Product Card Id` |
@@ -96,6 +98,8 @@ Only fields required for V1 analytics and defensible aggregations. No reference-
 ## 4. `customers_sanitized` — grain: one row per `customer_id` (PK)
 
 Customer geography comes **only** from customer-side source fields (e.g., customer city/state/country columns). It is never derived from order-destination geography: a customer’s most-common destination must not be substituted as customer location (ADR-016). If customer-side geography is absent, the fields are `null` and flagged — never imputed from destinations.
+
+Built only after customer-invariance validation passes (conflicts → `DQ-GRAIN-004`, `customers_sanitized` build blocked, no representative `customer_segment` is selected).
 
 | Field | Type | Null | Class | Source / formula |
 |---|---|---|---|---|
@@ -178,3 +182,12 @@ Header matching normalizes BOM/case/whitespace for lookup but preserves original
 ## 10. Privacy exclusions
 
 The following can never enter any canonical analytical structure, API payload, export, log, or screenshot: customer first name, last name, street, email, password; customer latitude/longitude or other precise coordinates; destination postal codes used as precise locators (missing values never imputed); IP addresses / access-log fields; redundant raw copies of any of the above. Profiling counts excluded columns without displaying values. The export privacy gate (`DQ-PRIVACY-003`) fails closed on any banned header.
+
+## 11. `data_quality_issues` — persisted counts-only projection of governed DQ evidence
+
+Grain: one row per triggered profiling rule. Columns: `rule_id`, `severity`,
+`count`, `treatment`, `blocked_stage`, `message` — the persisted form of the
+`DataQualityIssue` contract (`docs/api-contract.md`) and the catalogue's
+per-rule columns. Counts and governed field names only: no raw offending
+values, no row samples, no personal fields. This projection introduces no
+new rule content (context: ADR-036).

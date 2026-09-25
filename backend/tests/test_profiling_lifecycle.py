@@ -1,11 +1,12 @@
-"""Phase-6/7 lifecycle tests (synthetic data only, deterministic, no sleeps).
+"""Phase-6/7/8 lifecycle tests (synthetic data only, deterministic, no sleeps).
 
-Covers: PROFILING -> CLEANING -> CANONICALIZING on success (cleaning runs
-inline; canonicalization never starts), observational GETs, 409 pending
-behavior, terminal MALFORMED_CSV failure with ADR-028 cleanup, restart
-recovery of PROFILING sessions, duplicate-worker safety, reset
-no-resurrection, and idempotent reruns. HTTP behavior goes through the
-FastAPI app; stage-level behavior calls the service functions directly.
+Covers: PROFILING -> CLEANING -> CANONICALIZING -> ANALYZING on success
+(cleaning runs inline and chains canonicalization; KPI analysis never
+starts), observational GETs, 409 pending behavior, terminal MALFORMED_CSV
+failure with ADR-028 cleanup, restart recovery of PROFILING sessions,
+duplicate-worker safety, reset no-resurrection, and idempotent reruns. HTTP
+behavior goes through the FastAPI app; stage-level behavior calls the
+service functions directly.
 """
 
 from __future__ import annotations
@@ -99,17 +100,25 @@ def park_at_profiling(session_root: str, content: bytes) -> str:
     return session_id
 
 
-def test_success_advances_only_to_canonicalizing_and_stops(
+def test_success_advances_to_analyzing_and_stops(
     client: TestClient, session_root: str
 ) -> None:
     session_id = upload_ok(client, CLEAN_BYTES)
     data = client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]
-    assert data["state"] == "CANONICALIZING"
-    assert data["stage"] == "CANONICALIZING"
+    assert data["state"] == "ANALYZING"
+    assert data["stage"] == "ANALYZING"
     assert data["error"] is None
-    # Canonicalization itself never ran: cleaning artifacts exist, raw intact.
+    # Canonicalization ran; KPI analysis never starts: canonical artifacts
+    # exist alongside cleaning artifacts, raw intact, no KPI output.
     paths = session_store.session_paths(session_root, session_id)
     assert sorted(os.listdir(paths.derived)) == [
+        "canonical_calendar.csv",
+        "canonical_customers.csv",
+        "canonical_data_quality_issues.csv",
+        "canonical_order_items.csv",
+        "canonical_orders.csv",
+        "canonical_products.csv",
+        "canonical_report.json",
         "cleaned.csv",
         "cleaning_report.json",
         "profiling_report.json",
@@ -132,6 +141,7 @@ def test_error_findings_do_not_block_cleaning(
         "DQ-KEY-001",
         "DQ-DATE-001",
         "DQ-GRAIN-001",
+        "DQ-GRAIN-004",
     }
 
 
@@ -188,6 +198,7 @@ def test_severity_filter_and_rejection(client: TestClient, session_root: str) ->
         "DQ-KEY-001",
         "DQ-DATE-001",
         "DQ-GRAIN-001",
+        "DQ-GRAIN-004",
     }
     # The summary always describes the full evaluated set.
     assert errors["summary"]["rulesTriggered"] == len(
@@ -240,7 +251,7 @@ def test_recover_profiling_sessions_covers_crash_window(
     good_manifest = session_store.read_manifest(
         session_store.session_paths(session_root, good)
     )
-    assert good_manifest is not None and good_manifest.state == "CANONICALIZING"
+    assert good_manifest is not None and good_manifest.state == "ANALYZING"
     # Expired leftovers are the sweep's job, not recovery's.
     assert os.path.isdir(stale_paths.root)
 
@@ -252,7 +263,7 @@ def test_duplicate_worker_invocation_is_safe(
     first = profiling_service.run_profiling(session_id)
     second = profiling_service.run_profiling(session_id)
     assert first is not None and second is not None
-    assert first.state == second.state == "CANONICALIZING"
+    assert first.state == second.state == "ANALYZING"
     paths = session_store.session_paths(session_root, session_id)
     with open(
         os.path.join(paths.derived, "profiling_report.json"), encoding="utf-8"
@@ -285,7 +296,7 @@ def test_rerun_after_cleaning_is_a_noop(client: TestClient, session_root: str) -
     ) as handle:
         before = handle.read()
     manifest = profiling_service.run_profiling(session_id)
-    assert manifest is not None and manifest.state == "CANONICALIZING"
+    assert manifest is not None and manifest.state == "ANALYZING"
     with open(
         os.path.join(paths.derived, "profiling_report.json"), encoding="utf-8"
     ) as handle:
@@ -328,9 +339,9 @@ def test_concurrent_manifest_writes_never_fail(session_root: str) -> None:
     for thread in threads:
         thread.join()
     assert not errors
-    assert profiled is not None and profiled.state == "CANONICALIZING"
+    assert profiled is not None and profiled.state == "ANALYZING"
     final = session_store.read_manifest(paths)
-    assert final is not None and final.state == "CANONICALIZING"
+    assert final is not None and final.state == "ANALYZING"
     assert session_store.read_manifest(paths) is not None
     assert session_store.read_profiling_report(paths) is not None
     assert session_store.read_cleaning_report(paths) is not None
@@ -343,14 +354,14 @@ def test_torn_profiling_transition_is_adopted(
     session_id = upload_ok(client, CLEAN_BYTES)
     paths = session_store.session_paths(session_root, session_id)
     manifest = session_store.read_manifest(paths)
-    assert manifest is not None and manifest.state == "CANONICALIZING"
+    assert manifest is not None and manifest.state == "ANALYZING"
     manifest.state = "PROFILING"
     manifest.stage = "PROFILING"
     manifest.profileArtifact = None
     manifest.cleaningArtifact = None
     session_store.write_manifest(paths, manifest)
     adopted = profiling_service.run_profiling(session_id)
-    assert adopted is not None and adopted.state == "CANONICALIZING"
+    assert adopted is not None and adopted.state == "ANALYZING"
     assert adopted.profileArtifact is not None
 
 
@@ -372,7 +383,7 @@ def test_artifact_write_failure_leaves_safe_rerunnable_state(
     assert session_store.read_profiling_report(paths) is None
     monkeypatch.setattr(session_store, "write_profiling_report", real_write_report)
     recovered = profiling_service.run_profiling(session_id)
-    assert recovered is not None and recovered.state == "CANONICALIZING"
+    assert recovered is not None and recovered.state == "ANALYZING"
 
 
 def test_manifest_write_failure_after_artifact_adopted_on_rerun(
@@ -399,9 +410,10 @@ def test_manifest_write_failure_after_artifact_adopted_on_rerun(
     assert session_store.read_profiling_report(paths) is not None
     monkeypatch.setattr(session_store, "write_manifest", real_write)
     adopted = profiling_service.run_profiling(session_id)
-    assert adopted is not None and adopted.state == "CANONICALIZING"
+    assert adopted is not None and adopted.state == "ANALYZING"
     assert adopted.profileArtifact is not None
     assert adopted.cleaningArtifact is not None
+    assert adopted.canonicalArtifact is not None
 
 
 def test_missing_or_tampered_raw_fails_safely(session_root: str) -> None:
@@ -433,7 +445,7 @@ def test_corrupt_artifact_is_recomputed_not_trusted(session_root: str) -> None:
     ) as handle:
         handle.write("{not valid json")
     recomputed = profiling_service.run_profiling(session_id)
-    assert recomputed is not None and recomputed.state == "CANONICALIZING"
+    assert recomputed is not None and recomputed.state == "ANALYZING"
     assert session_store.read_profiling_report(paths) is not None
 
 

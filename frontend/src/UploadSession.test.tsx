@@ -84,7 +84,7 @@ const STATUS_CANONICALIZING = {
       completedStages: ["UPLOADING", "VALIDATING", "PROFILING", "CLEANING"],
       currentStage: "CANONICALIZING",
       remainingStages: ["ANALYZING", "READY"],
-      note: "Cleaning is complete; canonicalization is not implemented yet.",
+      note: "Cleaning is complete; canonicalization is parked at its quality gate.",
     },
     startedAt: "2026-09-24T00:00:00",
     updatedAt: "2026-09-24T00:00:02",
@@ -96,6 +96,36 @@ const STATUS_CANONICALIZING = {
     generatedAt: "2026-09-24T00:00:02",
     sessionId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
     sessionState: "CANONICALIZING",
+  },
+  error: null,
+};
+
+const STATUS_ANALYZING = {
+  data: {
+    state: "ANALYZING",
+    stage: "ANALYZING",
+    progress: {
+      completedStages: [
+        "UPLOADING",
+        "VALIDATING",
+        "PROFILING",
+        "CLEANING",
+        "CANONICALIZING",
+      ],
+      currentStage: "ANALYZING",
+      remainingStages: ["READY"],
+      note: "Canonical tables are built; KPI analysis is not implemented yet.",
+    },
+    startedAt: "2026-09-24T00:00:00",
+    updatedAt: "2026-09-24T00:00:02",
+    error: null,
+  },
+  meta: {
+    appVersion: "0.1.0",
+    schemaVersion: 1,
+    generatedAt: "2026-09-24T00:00:02",
+    sessionId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    sessionState: "ANALYZING",
   },
   error: null,
 };
@@ -256,6 +286,7 @@ const CLEANING_FLAGGED_ONLY = {
 function stubPhase6Fetch(
   qualityBody: unknown = QUALITY_OK,
   cleaningBody: unknown = CLEANING_OK,
+  statusBody: unknown = STATUS_ANALYZING,
 ): void {
   vi.stubGlobal(
     "fetch",
@@ -269,7 +300,7 @@ function stubPhase6Fetch(
             ? qualityBody
             : url.endsWith("/cleaning-report")
               ? cleaningBody
-              : STATUS_CANONICALIZING;
+              : statusBody;
       return Promise.resolve(
         new Response(JSON.stringify(body), {
           status: 200,
@@ -606,12 +637,35 @@ describe("UploadSession", () => {
     expect(panel).toHaveTextContent(/DQ-CAT-005/);
     expect(panel).toHaveTextContent(/DQ-NUM-002/);
     expect(panel).toHaveTextContent(/detected is not the same as fixed/i);
-    expect(panel).toHaveTextContent(/next stage: canonicalization/i);
+    expect(panel).toHaveTextContent(/next stage: kpi analysis/i);
     expect(panel.querySelector("p")).not.toBeNull();
   });
 
+  it("states the analyzing park without claiming analytics", async () => {
+    stubPhase6Fetch();
+    render(<UploadSession />);
+    fireEvent.change(screen.getByTestId("file-input"), {
+      target: { files: [csvFile()] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^upload$/i }));
+    const note = await screen.findByTestId("status-note");
+    expect(note).toHaveTextContent(/canonical tables are built/i);
+    expect(note).toHaveTextContent(/kpi analytics are not available/i);
+    for (const term of [
+      /analysis complete/i,
+      /dashboard ready/i,
+      /clean dataset/i,
+    ]) {
+      expect(note).not.toHaveTextContent(term);
+    }
+  });
+
   it("states the canonicalization gate instead of implying progress", async () => {
-    stubPhase6Fetch(QUALITY_BLOCKED, CLEANING_FLAGGED_ONLY);
+    stubPhase6Fetch(
+      QUALITY_BLOCKED,
+      CLEANING_FLAGGED_ONLY,
+      STATUS_CANONICALIZING,
+    );
     render(<UploadSession />);
     fireEvent.change(screen.getByTestId("file-input"), {
       target: { files: [csvFile()] },
@@ -619,12 +673,16 @@ describe("UploadSession", () => {
     fireEvent.click(screen.getByRole("button", { name: /^upload$/i }));
     const panel = await screen.findByTestId("cleaning-panel");
     expect(panel).toHaveTextContent(/canonicalization is gated/i);
-    expect(panel).toHaveTextContent(/no canonical work has started/i);
+    expect(panel).toHaveTextContent(/no complete canonical build exists/i);
     expect(panel).toHaveTextContent(/parked until the input/i);
   });
 
   it("never claims success while flagged issues remain", async () => {
-    stubPhase6Fetch(QUALITY_BLOCKED, CLEANING_FLAGGED_ONLY);
+    stubPhase6Fetch(
+      QUALITY_BLOCKED,
+      CLEANING_FLAGGED_ONLY,
+      STATUS_CANONICALIZING,
+    );
     render(<UploadSession />);
     fireEvent.change(screen.getByTestId("file-input"), {
       target: { files: [csvFile()] },
@@ -643,7 +701,7 @@ describe("UploadSession", () => {
   });
 
   it("states blocking issues without alarming language", async () => {
-    stubPhase6Fetch(QUALITY_BLOCKED);
+    stubPhase6Fetch(QUALITY_BLOCKED, CLEANING_OK, STATUS_CANONICALIZING);
     render(<UploadSession />);
     fireEvent.change(screen.getByTestId("file-input"), {
       target: { files: [csvFile()] },

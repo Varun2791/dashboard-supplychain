@@ -1,9 +1,10 @@
-"""FastAPI application (Phase 7: ingestion + schema + profiling + cleaning).
+"""FastAPI application (Phase 8: ingestion + schema + profiling + cleaning + canonical).
 
 Exposes the liveness endpoint plus the upload/status/reset routes and the
 schema, profile, data-quality, and cleaning-report routes from
-`docs/api-contract.md`. Canonicalization, KPI, and export routes belong to
-later phases and must not be added here.
+`docs/api-contract.md`. Canonical tables stay internal (no table endpoint in
+the contract); KPI and export routes belong to later phases and must not be
+added here.
 """
 
 from collections.abc import AsyncIterator
@@ -16,6 +17,7 @@ from pydantic import BaseModel
 
 from app.api.sessions import ingestion_error_envelope
 from app.api.sessions import router as sessions_router
+from app.canonicalization import recover_canonicalizing_sessions
 from app.cleaning import recover_cleaning_sessions
 from app.config import settings
 from app.ingestion_errors import IngestionError
@@ -53,15 +55,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     Covers the crash window between a 202 response and its post-response
     task (interrupted tasks leave no queue behind by design). Validation
-    recovery chains into profiling and cleaning, and further sweeps cover
-    sessions left PROFILING or CLEANING by a restart; expired/corrupt trees
-    are swept first, valid resumable sessions are never deleted, later
-    stages never start.
+    recovery chains into profiling, cleaning, and canonicalization, and
+    further sweeps cover sessions left PROFILING, CLEANING, or
+    CANONICALIZING by a restart; expired/corrupt trees are swept first,
+    valid resumable sessions are never deleted, KPI analysis never starts.
     """
     sweep_sessions(settings.session_root, datetime.now())
     recover_validating_sessions(settings.session_root)
     recover_profiling_sessions(settings.session_root)
     recover_cleaning_sessions(settings.session_root)
+    recover_canonicalizing_sessions(settings.session_root)
     yield
 
 

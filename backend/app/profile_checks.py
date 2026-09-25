@@ -40,6 +40,10 @@ Implementation interpretations (bounded by governance, documented here):
   Only distinct non-missing values conflict; missingness is reported
   separately. Product/category merchandising fields legitimately vary
   within an order and are never invariance-checked.
+- Dimension invariance (DQ-GRAIN-003/004, ADR-036) uses the same
+  stripped-text, non-missing-only comparison at product/customer grain:
+  merch fields vary legitimately within an order but must agree within a
+  product; customer_segment must agree within a customer.
 - Privacy detection (DQ-PRIVACY-001/002) is a documented keyword heuristic
   over header tokens because exact personal-header strings are unspecified
   in governance. It is INFO-only and reports counts, never header names.
@@ -120,6 +124,20 @@ INVARIANCE_FIELDS: Final = (
     "destination_region",
     "destination_market",
 )
+
+# Product identifying dims that must agree within one product (DQ-GRAIN-003,
+# ADR-036). unit_price is deliberately absent: no reference-price concept.
+PRODUCT_INVARIANCE_FIELDS: Final = (
+    "category_id",
+    "department_name",
+    "category_name",
+    "product_name",
+)
+
+# Customer identifying dims that must agree within one customer (DQ-GRAIN-004,
+# ADR-036). Only the segment: customer-side geography is nullable by
+# construction and never imputed, so it cannot conflict.
+CUSTOMER_INVARIANCE_FIELDS: Final = ("customer_segment",)
 
 ORDER_STATUS_VALUES: Final = frozenset(
     {
@@ -367,6 +385,24 @@ RULES: Final[dict[str, EvaluatedRule]] = {
         INVARIANCE_FIELDS,
         "order",
         "orders with a non-missing Order Id",
+    ),
+    "DQ-GRAIN-003": EvaluatedRule(
+        "ERROR",
+        "flagged",
+        "CANONICALIZATION",
+        "Product-invariance holds",
+        PRODUCT_INVARIANCE_FIELDS,
+        "product",
+        "products with a non-missing Product Card Id",
+    ),
+    "DQ-GRAIN-004": EvaluatedRule(
+        "ERROR",
+        "flagged",
+        "CANONICALIZATION",
+        "Customer-invariance holds",
+        CUSTOMER_INVARIANCE_FIELDS,
+        "customer",
+        "customers with a non-missing Customer Id",
     ),
     "DQ-BUSINESS-002": EvaluatedRule(
         "WARNING",
@@ -836,6 +872,41 @@ def evaluate_frame(
             )
         )
 
+    # -- DQ-GRAIN-003 ------------------------------------------------------------
+    prod_conflicting, _ = _dimension_key_conflicts(
+        frame, inputs, "product_id", PRODUCT_INVARIANCE_FIELDS
+    )
+    grain3 = len(prod_conflicting)
+    if grain3:
+        results.append(
+            _trigger(
+                "DQ-GRAIN-003",
+                grain3,
+                f"{grain3} product(s) disagree across lines on at "
+                "least one invariant product attribute. The products "
+                "build stays blocked; no representative value is picked.",
+            )
+        )
+
+    # -- DQ-GRAIN-004 ------------------------------------------------------------
+    # customer_segment is optional: without it nothing is assessable, so the
+    # rule is not evaluated (mirrors the rules_evaluated skip for DQ-CAT-003).
+    if "customer_segment" in col_of:
+        cust_conflicting, _ = _dimension_key_conflicts(
+            frame, inputs, "customer_id", CUSTOMER_INVARIANCE_FIELDS
+        )
+        grain4 = len(cust_conflicting)
+        if grain4:
+            results.append(
+                _trigger(
+                    "DQ-GRAIN-004",
+                    grain4,
+                    f"{grain4} customer(s) disagree across lines on "
+                    "customer_segment. The customers_sanitized build "
+                    "stays blocked; no representative segment is picked.",
+                )
+            )
+
     # -- DQ-BUSINESS-002 ----------------------------------------------------------
     actual = parse_int_values(trimmed["actual_shipping_days"])
     scheduled = parse_int_values(trimmed["scheduled_shipping_days"])
@@ -898,6 +969,60 @@ def evaluate_frame(
 
     # Orders checked is needed by the caller for the profile artifact.
     return missing, distinct, results
+
+
+def _dimension_key_conflicts(
+    frame: pd.DataFrame,
+    inputs: ProfileInputs,
+    key_field: str,
+    dim_fields: tuple[str, ...],
+) -> tuple[set[str], dict[str, int]]:
+    """Keys whose invariant dims disagree (dimension-specific, ADR-036).
+
+    Compares stripped governed text — the only authorized lexical treatment,
+    shared with DQ-GRAIN-001 (case-sensitive, internal whitespace kept, no
+    ID trimming, no fuzzy matching). Only distinct non-missing values
+    conflict; unmapped dim fields are narrowed out like INVARIANCE_FIELDS.
+    Returns conflicting key texts and per-field conflicting-key counts.
+    """
+    col_of = inputs.col_of
+    assessable = [f for f in dim_fields if f in col_of]
+    conflicting: set[str] = set()
+    by_field: dict[str, int] = {}
+    if key_field not in col_of or not assessable:
+        return conflicting, by_field
+    key_col = col_of[key_field]
+    key_present_mask = ~missing_mask(frame, key_col)
+    key_ids = stripped(frame, key_col)
+    for field in assessable:
+        vals = stripped(frame, col_of[field])
+        usable = key_present_mask & (vals != "")
+        if not bool(usable.any()):
+            by_field[field] = 0
+            continue
+        grouped = vals[usable].groupby(key_ids[usable]).nunique()
+        bad = set(grouped[grouped > 1].index.tolist())
+        by_field[field] = len(bad)
+        conflicting.update(bad)
+    return conflicting, by_field
+
+
+def dimension_invariance_by_key(
+    frame: pd.DataFrame,
+    inputs: ProfileInputs,
+    key_field: str,
+    dim_fields: tuple[str, ...],
+) -> tuple[int, int, dict[str, int]]:
+    """Recompute dimension-invariance detail for the profile artifact."""
+    col_of = inputs.col_of
+    if key_field not in col_of:
+        return 0, 0, {}
+    key_ids = stripped(frame, col_of[key_field])
+    keys_checked = int(key_ids[~missing_mask(frame, col_of[key_field])].nunique())
+    conflicting, by_field = _dimension_key_conflicts(
+        frame, inputs, key_field, dim_fields
+    )
+    return keys_checked, len(conflicting), by_field
 
 
 def invariance_by_field(

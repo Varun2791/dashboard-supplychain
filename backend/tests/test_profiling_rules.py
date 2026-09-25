@@ -43,6 +43,7 @@ EXPECTED_TRIGGERED = {
     "DQ-CAT-003": ("WARNING", "flagged", None, 1),
     "DQ-CAT-005": ("INFO", "detected", None, 1),
     "DQ-GRAIN-001": ("ERROR", "flagged", "CANONICALIZATION", 1),
+    "DQ-GRAIN-004": ("ERROR", "flagged", "CANONICALIZATION", 1),
     "DQ-BUSINESS-002": ("WARNING", "flagged", None, 1),
     "DQ-BUSINESS-003": ("WARNING", "flagged", None, 1),
     "DQ-PRIVACY-001": ("INFO", "excluded", None, 1),
@@ -125,10 +126,10 @@ def test_each_triggered_rule_matches_catalogue(
         message = artifact["issueMessages"][rule_id]
         assert str(count) in message, rule_id
     assert summary["rulesTriggered"] == len(EXPECTED_TRIGGERED)
-    assert summary["errors"] == 3
+    assert summary["errors"] == 4
     assert summary["warnings"] == 10
     assert summary["infos"] == 6
-    assert summary["blockingIssues"] == 3
+    assert summary["blockingIssues"] == 4
 
 
 def test_rule_order_is_catalogue_order(client: TestClient, session_root: str) -> None:
@@ -182,3 +183,39 @@ def test_grain_rule_counts_orders_not_lines(
         item["field"]: item["conflictingOrders"] for item in invariance["byField"]
     }
     assert by_field["order_status"] == 1
+
+
+def test_dimension_rule_catalogue_metadata_is_governed() -> None:
+    """DQ-GRAIN-003/004 implementation metadata matches ADR-036 (no fixture
+    trigger needed: GRAIN-003 is clean on every shared fixture)."""
+    from app.profile_checks import CUSTOMER_INVARIANCE_FIELDS, PRODUCT_INVARIANCE_FIELDS
+
+    assert "DQ-GRAIN-003" in RULE_ORDER
+    assert "DQ-GRAIN-004" in RULE_ORDER
+    prod = RULES["DQ-GRAIN-003"]
+    assert prod.severity == "ERROR"
+    assert prod.treatment == "flagged"
+    assert prod.blocked_stage == "CANONICALIZATION"
+    assert prod.grain == "product"
+    assert prod.fields == PRODUCT_INVARIANCE_FIELDS
+    assert prod.fields == (
+        "category_id",
+        "department_name",
+        "category_name",
+        "product_name",
+    )
+    cust = RULES["DQ-GRAIN-004"]
+    assert cust.severity == "ERROR"
+    assert cust.treatment == "flagged"
+    assert cust.blocked_stage == "CANONICALIZATION"
+    assert cust.grain == "customer"
+    assert cust.fields == CUSTOMER_INVARIANCE_FIELDS == ("customer_segment",)
+    # Docs carry the same rules: catalogue rows exist and neither redefines
+    # the order-only GRAIN-001 semantics.
+    catalogue = (
+        Path(__file__).parent.parent.parent / "docs" / "data-quality-rules.md"
+    ).read_text()
+    assert "| DQ-GRAIN-003 | Product-invariance holds |" in catalogue
+    assert "| DQ-GRAIN-004 | Customer-invariance holds |" in catalogue
+    assert "CANONICALIZATION (`products` build" in catalogue
+    assert "CANONICALIZATION (`customers_sanitized` build" in catalogue

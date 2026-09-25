@@ -64,7 +64,7 @@ Rules: `error.stage` is always the pipeline stage that failed. `details` carries
 | `POST` | `/sessions/uploads` | Create session, store immutable raw, run header guards | `multipart/form-data`: `file` (`.csv`, ≤250 MB) | `{ sessionId, statusUrl, filenameSafe, bytes, sha256, encoding }` · **`202`** | `400 EMPTY_FILE` / `INVALID_EXTENSION` / `MALFORMED_HEADER` / `DUPLICATE_HEADERS`; `413 FILE_TOO_LARGE`; `415 UNSUPPORTED_ENCODING`; `422 UNREADABLE_HEADER` |
 | `GET` | `/sessions/{id}/status` | Poll pipeline state + progress | — | `{ state, stage, progress, startedAt, updatedAt, error }` · `200` | `404 SESSION_NOT_FOUND`; `410 SESSION_EXPIRED` |
 | `GET` | `/sessions/{id}/schema` | Schema/mapping report | — | `{ sourceColumns[], mapping[{source, canonical, class}], missingCritical[] }` · `200` | `404` / `410`; `409 NOT_READY`; missing critical also surfaces as `422 SCHEMA_MISSING_COLUMN` once VALIDATING completes |
-| `GET` | `/sessions/{id}/profile` | Read-only pre-cleaning profile | — | `{ rows, columns, grain, missingness[], cardinality[], duplicates{exact, keyDupes}, invarianceConflicts }` · `200` | `404` / `410` / `409` |
+| `GET` | `/sessions/{id}/profile` | Read-only pre-cleaning profile | — | `{ rows, columns, grain, missingness[], cardinality[], duplicates{exact, keyDupes}, invarianceConflicts, productInvarianceConflicts, customerInvarianceConflicts }` · `200` | `404` / `410` / `409` |
 | `GET` | `/sessions/{id}/data-quality` | Issues by rule (`?severity=`) | query: `severity` | `{ summary, issues[{ruleId, severity, count, treatment, blockedStage}] }` · `200` | `404` / `410` / `409`; `422 INVALID_SEVERITY_FILTER` |
 | `GET` | `/sessions/{id}/cleaning-report` | Audit log of transforms | — | `{ steps[{ruleId, field, detected, fixed, flagged, excluded, unchanged, reason}] }` · `200` | `404` / `410` / `409` |
 | `GET` | `/sessions/{id}/kpis/overview` | Headline commercial + shipment KPIs | filters ( §5 ) | `{ kpis[{id, label, value, status, numerator, denominator, population, exclusions}], totals }` · `200` | `404` / `410` / `409`; `422 INVALID_FILTER_VALUE` (unknown enums rejected, never silently mapped) |
@@ -91,6 +91,8 @@ KPI endpoints require state `READY` for full results; filtered recomputation fro
 | `SCHEMA_MISSING_COLUMN` | 422 | VALIDATING | required source column absent; blocks CANONICALIZING and ANALYZING |
 | `DUPLICATE_ITEM_KEY` | 422 | CANONICALIZING | duplicate `Order Item Id`; blocks canonical build (no dedup) |
 | `ORDER_INVARIANCE_CONFLICT` | 422 | CANONICALIZING | conflicting order attributes; blocks `orders` build (no first-row pick) |
+| `PRODUCT_INVARIANCE_CONFLICT` | 422 | CANONICALIZING | conflicting invariant product attributes; blocks `products` build (no representative value) |
+| `CUSTOMER_INVARIANCE_CONFLICT` | 422 | CANONICALIZING | conflicting invariant customer attributes; blocks `customers_sanitized` build (no representative segment) |
 | `NOT_READY` | 409 | any | required stage not complete; `data` carries current `state` |
 | `INVALID_FILTER_VALUE` / `INVALID_GROUPING` / `INVALID_PAGINATION` / `INVALID_EXPORT_KIND` / `INVALID_SEVERITY_FILTER` | 422 / 400 | ANALYZING / serving | bad request shape; unknown enum filter values rejected, never mapped |
 | `EXPORT_BLOCKED` | 422 | export | privacy header-allowlist gate failed |

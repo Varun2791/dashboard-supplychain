@@ -825,6 +825,100 @@ Cleaning (Phase 7) and upcoming canonical/KPI work add defensive code that must 
 
 ---
 
+## ADR-036 — Product and customer dimension-invariance gates
+
+**Status:** Accepted
+**Date:** 2026-09-25
+
+### Context
+
+The canonical schema already requires `category_id`, `department_name`,
+`category_name`, and `product_name` to be invariant-checked within
+`product_id`, and `customer_segment` to be invariant-checked within
+`customer_id` (`docs/canonical-schema.md` §§3–4). Phase-6 profiling
+implemented cross-row detection only for order grain (DQ-GRAIN-001), and the
+DQ catalogue defined no product/customer invariance rule. The uncommitted
+Phase-8 implementation parked conflicting dimension tables under the
+order-specific `ORDER_INVARIANCE_CONFLICT` code, which its API definition
+("conflicting order attributes; blocks `orders` build") does not authorize.
+
+### Decision
+
+Two separate ERROR rules under one shared detection/enforcement
+architecture (separate keys, populations, attributes, meanings, and future
+evolution; independently auditable):
+
+- **DQ-GRAIN-003 — Product dimension invariance.** Population: groups of
+  lines sharing a non-missing `product_id`. Invariant attributes:
+  `category_id`, `department_name`, `category_name`, `product_name`
+  (`unit_price` is explicitly NOT invariant — no reference-price concept
+  exists). Conflict: within one `product_id`, an invariant attribute holds
+  at least two distinct non-missing governed values after the only
+  authorized lexical treatment (leading/trailing whitespace stripped, the
+  CAT-005 operation; case-sensitive, internal whitespace significant, no ID
+  trimming, no folding, no fuzzy matching). Missing vs one non-missing
+  value is not a conflict. Severity ERROR, detected in PROFILING,
+  treatment flagged, no auto-transform, blockedStage CANONICALIZATION,
+  block scope `products` table only. Enforcement: canonicalization must
+  not build `products` when triggered. API code
+  `PRODUCT_INVARIANCE_CONFLICT` (422, CANONICALIZING; conflicting invariant
+  product attributes; blocks `products` build).
+- **DQ-GRAIN-004 — Customer dimension invariance.** Population: groups of
+  lines sharing a non-missing `customer_id`. Invariant attribute:
+  `customer_segment` only (customer-side geography is nullable by
+  construction and never imputed, so it cannot conflict). Same
+  conflict/lexical/missing semantics as above. Severity ERROR, PROFILING
+  detection, flagged, no auto-transform, blockedStage CANONICALIZATION,
+  scope `customers_sanitized` only. API code
+  `CUSTOMER_INVARIANCE_CONFLICT` (422, CANONICALIZING; conflicting
+  invariant customer attributes; blocks `customers_sanitized` build).
+
+Both rules forbid first-row picks, majority votes, arbitrary nulling,
+representative values, silent key omission, and dedupe. Canonicalization
+enforces profiling evidence unioned with a defensive re-check on cleaned
+data; any disagreement parks (never builds) the affected table as a
+recoverable gate rather than failing terminally, because the two stages
+work on different lexical bases (profiling compares stripped raw text;
+canonicalization compares exact cleaned text, and IDs are never trimmed).
+Unrelated tables always build per the established per-table gate model.
+There is no waiver flow: ERROR-gated tables stay gated until the input is
+fixed or replaced.
+
+Explicitly unchanged: DQ-GRAIN-001 remains order-only;
+`ORDER_INVARIANCE_CONFLICT` remains order-only (blocks the `orders` build);
+order-grain semantics, cleaning/imputation authority (these rules authorize
+no transformation), and unrelated-table behavior are untouched. Phase 6
+gains the missing governed detection while remaining `[~]` (reference-file
+verification still pending); Phase 8 consumes and enforces it.
+
+### Considered alternatives (rejected)
+
+- One generic product/customer rule: rejected — different keys,
+  populations, and business meanings deserve independent audit trails.
+- Extending DQ-GRAIN-001: rejected — its detection text, fields, grain,
+  population, and `orders`-build scope are order-specific; broadening it
+  dilutes a governed ERROR rule.
+- Reusing `ORDER_INVARIANCE_CONFLICT`: rejected — the code's API definition
+  is order-specific; reuse destroys its semantic precision.
+- Canonicalization-only detection: rejected — conflicts belong in
+  pre-cleaning DQ evidence like every other invariance finding; silent
+  profiles would contradict the product-spec audit promise.
+- Whole-build blocking: rejected — disproportionate; no precedent (KEY-001
+  and GRAIN-001 both scope to one build).
+- Nulling conflicts or picking a representative/first row: rejected —
+  fabrication; a conflicted value is present-but-disagreed, not
+  absent/inapplicable.
+
+### Consequences
+
+- Profiling, cleaning-travel, canonicalization, catalogue, API contract,
+  and canonical schema each gain the two rules; parked sessions report
+  dimension-precise blocker codes.
+- A product/customer conflict can no longer be confused with an order
+  conflict in any report, log, or test.
+
+---
+
 ## Decision-change template
 
 Copy this section when proposing a new material decision:

@@ -280,6 +280,10 @@ def ensure_schema_validated(
             "schemaArtifact": os.path.join(
                 session_store.DERIVED_DIRNAME, session_store.SCHEMA_ARTIFACT_FILENAME
             ),
+            # Fresh schema invalidates everything downstream.
+            "profileArtifact": None,
+            "cleaningArtifact": None,
+            "canonicalArtifact": None,
             "error": None,
             "updatedAt": now_iso,
             "lastAccessedAt": now_iso,

@@ -26,6 +26,7 @@ import json
 import logging
 import os
 import shutil
+import threading
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -35,12 +36,14 @@ from pydantic import ValidationError
 from app.config import settings
 from app.schemas import (
     FORWARD_STATES,
+    STATE_ANALYZING,
     STATE_CANONICALIZING,
     STATE_CLEANING,
     STATE_FAILED,
     STATE_PROFILING,
     STATE_UPLOADING,
     STATE_VALIDATING,
+    CanonicalArtifact,
     CleaningArtifact,
     ProfilingArtifact,
     SchemaReport,
@@ -59,6 +62,13 @@ SCHEMA_ARTIFACT_FILENAME = "schema_report.json"
 PROFILING_ARTIFACT_FILENAME = "profiling_report.json"
 CLEANING_ARTIFACT_FILENAME = "cleaning_report.json"
 CLEANED_FILENAME = "cleaned.csv"
+CANONICAL_ARTIFACT_FILENAME = "canonical_report.json"
+CANONICAL_ITEMS_FILENAME = "canonical_order_items.csv"
+CANONICAL_ORDERS_FILENAME = "canonical_orders.csv"
+CANONICAL_PRODUCTS_FILENAME = "canonical_products.csv"
+CANONICAL_CUSTOMERS_FILENAME = "canonical_customers.csv"
+CANONICAL_CALENDAR_FILENAME = "canonical_calendar.csv"
+CANONICAL_ISSUES_FILENAME = "canonical_data_quality_issues.csv"
 
 
 def utcnow_naive_iso() -> str:
@@ -128,6 +138,16 @@ def _unique_tmp_path(final_path: str) -> str:
     return f"{final_path}.{uuid.uuid4().hex}.tmp"
 
 
+# Process-wide manifest-write serialization (single-process assumption, same
+# as the in-process duplicate-run guards). Atomic renames alone cannot stop
+# a stale status touch from overwriting a newer pipeline transition: the
+# touch's read-compare-write must hold this lock across the whole sequence
+# while every `write_manifest` holds it for the write, so a touch either
+# observes the transition (and backs off) or lands before it (and loses).
+# Reentrant: the touch path writes through `write_manifest` while holding it.
+_MANIFEST_LOCK: threading.RLock = threading.RLock()
+
+
 def _atomic_write_json(final_path: str, payload: str) -> None:
     """Write ``payload`` to ``final_path`` atomically via a unique temp file."""
     tmp_path = _unique_tmp_path(final_path)
@@ -145,7 +165,8 @@ def _atomic_write_json(final_path: str, payload: str) -> None:
 
 def write_manifest(paths: SessionPaths, manifest: SessionManifest) -> None:
     """Persist the manifest atomically: temp file + rename, never partial."""
-    _atomic_write_json(paths.manifest, manifest.model_dump_json())
+    with _MANIFEST_LOCK:
+        _atomic_write_json(paths.manifest, manifest.model_dump_json())
 
 
 def read_manifest(paths: SessionPaths) -> SessionManifest | None:
@@ -181,17 +202,18 @@ def touch_manifest_if_current(
     """
     if manifest.state == STATE_FAILED:
         return manifest
-    disk = read_manifest_bytes(paths)
-    if disk is None:
-        return manifest
-    if disk != manifest.model_dump_json().encode("utf-8"):
-        fresh = read_manifest(paths)
-        return fresh if fresh is not None else manifest
-    touched = manifest.model_copy(
-        update={"lastAccessedAt": now_iso, "updatedAt": now_iso}
-    )
-    write_manifest(paths, touched)
-    return touched
+    with _MANIFEST_LOCK:
+        disk = read_manifest_bytes(paths)
+        if disk is None:
+            return manifest
+        if disk != manifest.model_dump_json().encode("utf-8"):
+            fresh = read_manifest(paths)
+            return fresh if fresh is not None else manifest
+        touched = manifest.model_copy(
+            update={"lastAccessedAt": now_iso, "updatedAt": now_iso}
+        )
+        write_manifest(paths, touched)
+        return touched
 
 
 def make_validating_progress() -> SessionProgress:
@@ -239,7 +261,25 @@ def make_canonicalizing_progress() -> SessionProgress:
         ],
         currentStage=STATE_CANONICALIZING,
         remainingStages=[stage for stage in FORWARD_STATES[current_index + 1 :]],
-        note="Cleaning is complete; canonicalization is not implemented yet.",
+        note="Cleaning is complete; canonicalization is running or parked "
+        "at its quality gate.",
+    )
+
+
+def make_analyzing_progress() -> SessionProgress:
+    """Truthful Phase-8 progress: CANONICALIZING done, parked at ANALYZING."""
+    current_index = FORWARD_STATES.index(STATE_ANALYZING)
+    return SessionProgress(
+        completedStages=[
+            STATE_UPLOADING,
+            STATE_VALIDATING,
+            STATE_PROFILING,
+            STATE_CLEANING,
+            STATE_CANONICALIZING,
+        ],
+        currentStage=STATE_ANALYZING,
+        remainingStages=[stage for stage in FORWARD_STATES[current_index + 1 :]],
+        note="Canonical tables are built; KPI analysis is not implemented yet.",
     )
 
 
@@ -304,6 +344,31 @@ def read_schema_report(paths: SessionPaths) -> SchemaReport | None:
         with open(schema_artifact_path(paths), encoding="utf-8") as handle:
             payload = json.load(handle)
         return SchemaReport.model_validate(payload)
+    except (OSError, ValueError, ValidationError):
+        return None
+
+
+def canonical_artifact_path(paths: SessionPaths) -> str:
+    """Derived-area location of the canonical report (raw stays untouched)."""
+    return os.path.join(paths.derived, CANONICAL_ARTIFACT_FILENAME)
+
+
+def canonical_table_path(paths: SessionPaths, filename: str) -> str:
+    """Derived-area location of one persisted canonical table."""
+    return os.path.join(paths.derived, filename)
+
+
+def write_canonical_report(paths: SessionPaths, report: CanonicalArtifact) -> None:
+    """Persist the canonical report atomically into `derived/`."""
+    _atomic_write_json(canonical_artifact_path(paths), report.model_dump_json())
+
+
+def read_canonical_report(paths: SessionPaths) -> CanonicalArtifact | None:
+    """Load the canonical report; corrupt/missing input yields None."""
+    try:
+        with open(canonical_artifact_path(paths), encoding="utf-8") as handle:
+            payload = json.load(handle)
+        return CanonicalArtifact.model_validate(payload)
     except (OSError, ValueError, ValidationError):
         return None
 
