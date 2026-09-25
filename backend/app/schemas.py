@@ -13,12 +13,15 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 # Accepted lifecycle states (ADR-029). Phase 6 advances PROFILING sessions
-# to CLEANING on success or FAILED on an unparseable body; later states
-# belong to Phases 7-9.
+# to CLEANING on success or FAILED on an unparseable body; Phase 7 advances
+# CLEANING sessions to CANONICALIZING on success (parking there without
+# performing canonicalization) or FAILED on terminal cleaning failure.
+# ANALYZING/READY belong to Phases 8-9.
 STATE_UPLOADING = "UPLOADING"
 STATE_VALIDATING = "VALIDATING"
 STATE_PROFILING = "PROFILING"
 STATE_CLEANING = "CLEANING"
+STATE_CANONICALIZING = "CANONICALIZING"
 STATE_FAILED = "FAILED"
 STATE_EXPIRED = "EXPIRED"
 
@@ -148,6 +151,7 @@ class SessionManifest(BaseModel):
     error: ApiErrorModel | None = None
     schemaArtifact: str | None = None
     profileArtifact: str | None = None
+    cleaningArtifact: str | None = None
 
 
 class SchemaFieldMapping(BaseModel):
@@ -365,3 +369,86 @@ class ProfilingArtifact(BaseModel):
     rulesEvaluated: list[str]
     rulesDeferred: list[str]
     profiledAt: str
+
+
+class CleaningStep(BaseModel):
+    """One audited cleaning outcome (contract-exact shape).
+
+    Counts describe detected observations only: `detected` always equals
+    `fixed + flagged + excluded + unchanged` per step. Unaffected rows are
+    never counted. Carries rule IDs, governed field names, and counts only —
+    never cell values, row samples, or personal fields.
+    """
+
+    ruleId: str
+    # Canonical field; comma-joined for multi-field rules, "" when column-grain.
+    field: str
+    detected: int
+    fixed: int
+    flagged: int
+    excluded: int
+    unchanged: int
+    reason: str
+
+
+class CleaningReportData(BaseModel):
+    """`GET /sessions/{id}/cleaning-report` payload (contract-exact shape)."""
+
+    steps: list[CleaningStep]
+
+
+class CleaningReportResponse(BaseModel):
+    """Success envelope for the cleaning-report endpoint."""
+
+    data: CleaningReportData
+    meta: EnvelopeMeta
+    error: None = None
+
+
+class CleaningTotals(BaseModel):
+    """Session-level cleaning totals (rows distinct; step sums overlap by design)."""
+
+    rows: int
+    rowsWithPaddingDetected: int  # distinct rows with CAT-005 padding
+    rowsFixed: int  # distinct rows with >= 1 trimmed cell
+    cellsFixed: int  # total trimmed cells across governed label fields
+    fieldsTrimmed: int  # governed label fields with >= 1 trimmed cell
+
+
+class MoneyReconciliation(BaseModel):
+    """Pre/post cleaning money totals: trim-only cleaning must not move these."""
+
+    grossPre: str
+    grossPost: str
+    discountPre: str
+    discountPost: str
+    netPre: str
+    netPost: str
+    profitPre: str
+    profitPost: str
+
+
+class CleaningArtifact(BaseModel):
+    """Derived `cleaning_report.json`: audit log + provenance (counts only).
+
+    Internal superset of the public projection. Stores per-rule/field steps,
+    totals, money reconciliation, output identity, versions, and timestamps —
+    never row contents, cell values, or personal fields.
+    """
+
+    sessionId: str
+    appVersion: str
+    schemaVersion: int
+    sourceSha256: str
+    inputProfileArtifact: str
+    inputProfiledAt: str
+    inputSourceRows: int
+    rulesEvaluated: list[str]
+    steps: list[CleaningStep]
+    totals: CleaningTotals
+    reconciliation: MoneyReconciliation
+    outputArtifact: str
+    outputSha256: str
+    outputBytes: int
+    outputRows: int
+    cleanedAt: str

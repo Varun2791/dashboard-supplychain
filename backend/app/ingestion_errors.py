@@ -32,6 +32,9 @@ STAGE_VALIDATING = "VALIDATING"
 # Stage reported for value-level profiling failures (DQ-FILE-005 and co).
 STAGE_PROFILING = "PROFILING"
 
+# Stage reported for auditable-cleaning failures (Phase 7).
+STAGE_CLEANING = "CLEANING"
+
 
 class IngestionError(Exception):
     """A contract-mapped ingestion failure (never leaks raw contents)."""

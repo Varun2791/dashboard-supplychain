@@ -1,5 +1,6 @@
 import type {
   ApiErrorPayload,
+  CleaningReportData,
   DataQualityData,
   ProfileData,
   SchemaReportData,
@@ -9,6 +10,7 @@ import type {
 
 export type {
   ApiErrorPayload,
+  CleaningReportData,
   DataQualityData,
   ProfileData,
   SchemaReportData,
@@ -284,6 +286,37 @@ export async function fetchProfile(sessionId: string): Promise<ProfileData> {
   const { message, code, details } = envelopeError(
     payload,
     "Could not read the profiling report.",
+  );
+  throw new ApiRequestError(response.status, message, code, details);
+}
+
+/** Read the Phase-7 cleaning audit log (contract shape; counts only). */
+export async function fetchCleaningReport(
+  sessionId: string,
+): Promise<CleaningReportData> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `${API_BASE}/api/v1/sessions/${encodeURIComponent(sessionId)}/cleaning-report`,
+    );
+  } catch {
+    throw new ApiRequestError(
+      0,
+      "Could not reach the local server. Start the backend and try again.",
+    );
+  }
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  if (response.ok) {
+    return (payload as { data: CleaningReportData }).data;
+  }
+  const { message, code, details } = envelopeError(
+    payload,
+    "Could not read the cleaning report.",
   );
   throw new ApiRequestError(response.status, message, code, details);
 }

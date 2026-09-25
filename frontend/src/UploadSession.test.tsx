@@ -76,15 +76,15 @@ const SCHEMA_OK = {
   error: null,
 };
 
-const STATUS_CLEANING = {
+const STATUS_CANONICALIZING = {
   data: {
-    state: "CLEANING",
-    stage: "CLEANING",
+    state: "CANONICALIZING",
+    stage: "CANONICALIZING",
     progress: {
-      completedStages: ["UPLOADING", "VALIDATING", "PROFILING"],
-      currentStage: "CLEANING",
-      remainingStages: ["CANONICALIZING"],
-      note: "Cleaning is not implemented yet.",
+      completedStages: ["UPLOADING", "VALIDATING", "PROFILING", "CLEANING"],
+      currentStage: "CANONICALIZING",
+      remainingStages: ["ANALYZING", "READY"],
+      note: "Cleaning is complete; canonicalization is not implemented yet.",
     },
     startedAt: "2026-09-24T00:00:00",
     updatedAt: "2026-09-24T00:00:02",
@@ -95,7 +95,7 @@ const STATUS_CLEANING = {
     schemaVersion: 1,
     generatedAt: "2026-09-24T00:00:02",
     sessionId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    sessionState: "CLEANING",
+    sessionState: "CANONICALIZING",
   },
   error: null,
 };
@@ -119,7 +119,7 @@ const PROFILE_OK = {
     schemaVersion: 1,
     generatedAt: "2026-09-24T00:00:02",
     sessionId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    sessionState: "CLEANING",
+    sessionState: "CANONICALIZING",
   },
   error: null,
 };
@@ -156,7 +156,7 @@ const QUALITY_OK = {
     schemaVersion: 1,
     generatedAt: "2026-09-24T00:00:02",
     sessionId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    sessionState: "CLEANING",
+    sessionState: "CANONICALIZING",
   },
   error: null,
 };
@@ -186,13 +186,77 @@ const QUALITY_BLOCKED = {
     schemaVersion: 1,
     generatedAt: "2026-09-24T00:00:02",
     sessionId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    sessionState: "CLEANING",
+    sessionState: "CANONICALIZING",
   },
   error: null,
 };
 
-/** Route stubbed fetch calls to the Phase-6 report fixtures by URL suffix. */
-function stubPhase6Fetch(qualityBody: unknown = QUALITY_OK): void {
+const CLEANING_OK = {
+  data: {
+    steps: [
+      {
+        ruleId: "DQ-CAT-005",
+        field: "destination_country",
+        detected: 1,
+        fixed: 1,
+        flagged: 0,
+        excluded: 0,
+        unchanged: 0,
+        reason: "Trimmed leading/trailing whitespace; 1 cell(s) changed.",
+      },
+      {
+        ruleId: "DQ-NUM-002",
+        field: "gross_sales,discount_amount,net_sales",
+        detected: 1,
+        fixed: 0,
+        flagged: 1,
+        excluded: 0,
+        unchanged: 0,
+        reason: "1 observation(s) retained without change for investigation.",
+      },
+    ],
+  },
+  meta: {
+    appVersion: "0.1.0",
+    schemaVersion: 1,
+    generatedAt: "2026-09-24T00:00:02",
+    sessionId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    sessionState: "CANONICALIZING",
+  },
+  error: null,
+};
+
+const CLEANING_FLAGGED_ONLY = {
+  data: {
+    steps: [
+      {
+        ruleId: "DQ-KEY-001",
+        field: "order_item_id",
+        detected: 2,
+        fixed: 0,
+        flagged: 2,
+        excluded: 0,
+        unchanged: 0,
+        reason:
+          "2 observation(s) retained without change. Blocks CANONICALIZATION until the input is fixed or replaced.",
+      },
+    ],
+  },
+  meta: {
+    appVersion: "0.1.0",
+    schemaVersion: 1,
+    generatedAt: "2026-09-24T00:00:02",
+    sessionId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    sessionState: "CANONICALIZING",
+  },
+  error: null,
+};
+
+/** Route stubbed fetch calls to the report fixtures by URL suffix. */
+function stubPhase6Fetch(
+  qualityBody: unknown = QUALITY_OK,
+  cleaningBody: unknown = CLEANING_OK,
+): void {
   vi.stubGlobal(
     "fetch",
     vi.fn((input: unknown) => {
@@ -203,7 +267,9 @@ function stubPhase6Fetch(qualityBody: unknown = QUALITY_OK): void {
           ? PROFILE_OK
           : url.endsWith("/data-quality")
             ? qualityBody
-            : STATUS_CLEANING;
+            : url.endsWith("/cleaning-report")
+              ? cleaningBody
+              : STATUS_CANONICALIZING;
       return Promise.resolve(
         new Response(JSON.stringify(body), {
           status: 200,
@@ -523,7 +589,57 @@ describe("UploadSession", () => {
     expect(panel).toHaveTextContent(/Warnings: 1/i);
     expect(panel).toHaveTextContent(/Informational notes: 1/i);
     expect(panel).toHaveTextContent(/no issue blocks the next stage/i);
-    expect(panel).toHaveTextContent(/next stage: cleaning/i);
+    expect(panel).toHaveTextContent(/cleaning review below/i);
+  });
+
+  it("shows the cleaning review with detected-versus-fixed counts", async () => {
+    stubPhase6Fetch();
+    render(<UploadSession />);
+    fireEvent.change(screen.getByTestId("file-input"), {
+      target: { files: [csvFile()] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^upload$/i }));
+    const panel = await screen.findByTestId("cleaning-panel");
+    expect(panel).toHaveTextContent(/2 detected across 2 rules/i);
+    expect(panel).toHaveTextContent(/1 fixed/i);
+    expect(panel).toHaveTextContent(/1 flagged/i);
+    expect(panel).toHaveTextContent(/DQ-CAT-005/);
+    expect(panel).toHaveTextContent(/DQ-NUM-002/);
+    expect(panel).toHaveTextContent(/detected is not the same as fixed/i);
+    expect(panel).toHaveTextContent(/next stage: canonicalization/i);
+    expect(panel.querySelector("p")).not.toBeNull();
+  });
+
+  it("states the canonicalization gate instead of implying progress", async () => {
+    stubPhase6Fetch(QUALITY_BLOCKED, CLEANING_FLAGGED_ONLY);
+    render(<UploadSession />);
+    fireEvent.change(screen.getByTestId("file-input"), {
+      target: { files: [csvFile()] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^upload$/i }));
+    const panel = await screen.findByTestId("cleaning-panel");
+    expect(panel).toHaveTextContent(/canonicalization is gated/i);
+    expect(panel).toHaveTextContent(/no canonical work has started/i);
+    expect(panel).toHaveTextContent(/parked until the input/i);
+  });
+
+  it("never claims success while flagged issues remain", async () => {
+    stubPhase6Fetch(QUALITY_BLOCKED, CLEANING_FLAGGED_ONLY);
+    render(<UploadSession />);
+    fireEvent.change(screen.getByTestId("file-input"), {
+      target: { files: [csvFile()] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^upload$/i }));
+    const panel = await screen.findByTestId("cleaning-panel");
+    expect(panel).toHaveTextContent(/2 flagged issues remain/i);
+    expect(panel).toHaveTextContent(/DQ-KEY-001/);
+    for (const term of [
+      /data cleaned successfully/i,
+      /all issues fixed/i,
+      /cleaning complete.*no issues/i,
+    ]) {
+      expect(panel).not.toHaveTextContent(term);
+    }
   });
 
   it("states blocking issues without alarming language", async () => {
@@ -570,12 +686,13 @@ describe("UploadSession", () => {
       "fetch",
       vi.fn((input: unknown) => {
         const url = String(input);
-        let body: unknown = STATUS_CLEANING;
+        let body: unknown = STATUS_CANONICALIZING;
         let status = 200;
         if (
           url.endsWith("/schema") ||
           url.endsWith("/profile") ||
-          url.endsWith("/data-quality")
+          url.endsWith("/data-quality") ||
+          url.endsWith("/cleaning-report")
         ) {
           reportCalls += 1;
           if (reportCalls === 1) {
@@ -585,17 +702,19 @@ describe("UploadSession", () => {
               meta: {},
               error: {
                 code: "NOT_READY",
-                stage: "PROFILING",
-                message: "Value-level profiling has not completed yet.",
-                details: { state: "CLEANING" },
+                stage: "CLEANING",
+                message: "Auditable cleaning has not completed yet.",
+                details: { state: "CANONICALIZING" },
               },
             };
           } else if (url.endsWith("/schema")) {
             body = SCHEMA_OK;
           } else if (url.endsWith("/profile")) {
             body = PROFILE_OK;
-          } else {
+          } else if (url.endsWith("/data-quality")) {
             body = QUALITY_OK;
+          } else {
+            body = CLEANING_OK;
           }
         }
         return Promise.resolve(
@@ -618,6 +737,7 @@ describe("UploadSession", () => {
     });
     expect(screen.getByTestId("schema-panel")).toBeInTheDocument();
     expect(screen.getByTestId("quality-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("cleaning-panel")).toBeInTheDocument();
     expect(screen.queryByTestId("error-panel")).not.toBeInTheDocument();
   });
 
@@ -627,7 +747,7 @@ describe("UploadSession", () => {
       "fetch",
       vi.fn((input: unknown) => {
         const url = String(input);
-        let body: unknown = STATUS_CLEANING;
+        let body: unknown = STATUS_CANONICALIZING;
         if (url.endsWith("/schema")) {
           body = {
             data: {
@@ -642,6 +762,8 @@ describe("UploadSession", () => {
           body = PROFILE_OK;
         } else if (url.endsWith("/data-quality")) {
           body = QUALITY_OK;
+        } else if (url.endsWith("/cleaning-report")) {
+          body = CLEANING_OK;
         }
         return Promise.resolve(
           new Response(JSON.stringify(body), {

@@ -6,11 +6,13 @@ governed ``pandas.read_csv`` staging read (pyarrow-backed strings plus a
 governed column projection), artifact persistence, lifecycle transitions,
 the post-response pipeline hook, and startup recovery.
 
-Lifecycle: success advances ``PROFILING -> CLEANING`` and stops (no
-cleaning runs here); a malformed body fails terminally per DQ-FILE-005
+Lifecycle: success advances ``PROFILING -> CLEANING`` and chains the
+Phase-7 cleaning worker inline, so profiled sessions settle at
+CANONICALIZING; a malformed body fails terminally per DQ-FILE-005
 with ADR-028 raw/derived removal. ``ERROR`` findings on DQ-KEY-001,
 DQ-DATE-001, and DQ-GRAIN-001 name the exact downstream stage they gate
-and travel with the session into CLEANING; they do not stop profiling.
+and travel with the session through CLEANING; they do not stop profiling
+or cleaning.
 
 Execution model: these workers are synchronous and run through the
 existing framework-local post-response runner (``BackgroundTasks``).
@@ -557,9 +559,11 @@ _PROFILING_IN_PROGRESS: set[str] = set()
 def run_profiling(session_id: str) -> SessionManifest | None:
     """Execute one profiling pass for a session (pipeline/recovery body).
 
-    Safe against reset races: a deleted session (no manifest) is a no-op
-    and is never resurrected. Returns the resulting manifest, or None when
-    there was nothing to do.
+    On success the Phase-7 cleaning worker is chained inline (same
+    framework-local runner): profiled sessions therefore settle at
+    CANONICALIZING once both steps complete. Safe against reset races: a
+    deleted session (no manifest) is a no-op and is never resurrected.
+    Returns the resulting manifest, or None when there was nothing to do.
     """
     if not session_store.is_valid_session_id(session_id):
         return None
@@ -571,7 +575,14 @@ def run_profiling(session_id: str) -> SessionManifest | None:
         manifest = session_store.read_manifest(paths)
         if manifest is None:
             return None
-        return ensure_profiled(paths, manifest, session_store.utcnow_naive_iso())
+        result = ensure_profiled(paths, manifest, session_store.utcnow_naive_iso())
+        if result.state == STATE_CLEANING and result.cleaningArtifact is None:
+            # Local import: cleaning owns the reverse dependency.
+            from app.cleaning import run_cleaning
+
+            cleaned = run_cleaning(session_id)
+            return cleaned if cleaned is not None else result
+        return result
     finally:
         _PROFILING_IN_PROGRESS.discard(session_id)
 

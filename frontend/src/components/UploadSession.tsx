@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import {
   ApiRequestError,
   deleteSession,
+  fetchCleaningReport,
   fetchDataQuality,
   fetchProfile,
   fetchSchemaReport,
@@ -11,6 +12,7 @@ import {
 } from "@/lib/api";
 import type {
   ApiErrorPayload,
+  CleaningReportData,
   DataQualityData,
   ProfileData,
   SchemaReportData,
@@ -22,7 +24,14 @@ const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 const MAX_STATUS_POLLS = 6;
 const POLL_INTERVAL_MS = 1500;
 /** States that keep the status check running (bounded by MAX_STATUS_POLLS). */
-const CONTINUING_STATES = new Set(["UPLOADING", "VALIDATING", "PROFILING"]);
+const CONTINUING_STATES = new Set([
+  "UPLOADING",
+  "VALIDATING",
+  "PROFILING",
+  "CLEANING",
+]);
+/** Settled state with schema, profile, quality, and cleaning reports ready. */
+const SETTLED_STATE = "CANONICALIZING";
 
 const ERROR_GUIDANCE: Record<string, string> = {
   EMPTY_FILE:
@@ -135,13 +144,14 @@ export default function UploadSession() {
   const [schema, setSchema] = useState<SchemaReportData | null>(null);
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [quality, setQuality] = useState<DataQualityData | null>(null);
+  const [cleaning, setCleaning] = useState<CleaningReportData | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   // Bounded status check: confirm the stored session state, then stop.
   // VALIDATING sessions resolve through schema validation on the server;
-  // a CLEANING session loads its schema, profile, and data-quality reports
-  // once each, a FAILED session surfaces its stored error. Polling never
-  // waits for later stages.
+  // a CANONICALIZING session loads its schema, profile, data-quality, and
+  // cleaning reports once each, a FAILED session surfaces its stored error.
+  // Polling never waits for later stages.
   useEffect(() => {
     if (phase !== "active" || session === null || pollSettled) {
       return;
@@ -161,19 +171,22 @@ export default function UploadSession() {
           setPollSettled(true);
           return;
         }
-        if (status.state === "CLEANING") {
+        if (status.state === SETTLED_STATE) {
           try {
-            const [report, profileReport, qualityReport] = await Promise.all([
-              fetchSchemaReport(session.sessionId),
-              fetchProfile(session.sessionId),
-              fetchDataQuality(session.sessionId),
-            ]);
+            const [report, profileReport, qualityReport, cleaningReport] =
+              await Promise.all([
+                fetchSchemaReport(session.sessionId),
+                fetchProfile(session.sessionId),
+                fetchDataQuality(session.sessionId),
+                fetchCleaningReport(session.sessionId),
+              ]);
             if (cancelled) {
               return;
             }
             setSchema(report);
             setProfile(profileReport);
             setQuality(qualityReport);
+            setCleaning(cleaningReport);
             setPollSettled(true);
           } catch (error) {
             if (cancelled) {
@@ -259,6 +272,7 @@ export default function UploadSession() {
     setSchema(null);
     setProfile(null);
     setQuality(null);
+    setCleaning(null);
     setSessionState(null);
     setPollCount(0);
     setPollSettled(false);
@@ -296,6 +310,7 @@ export default function UploadSession() {
     setSchema(null);
     setProfile(null);
     setQuality(null);
+    setCleaning(null);
     setProgress(null);
     setPhase("idle");
   }
@@ -308,6 +323,29 @@ export default function UploadSession() {
     schema !== null
       ? schema.mapping.filter((entry) => entry.fieldClass === "unknown").length
       : 0;
+  const cleaningTotals =
+    cleaning !== null
+      ? cleaning.steps.reduce(
+          (totals, step) => ({
+            rules: totals.rules + 1,
+            detected: totals.detected + step.detected,
+            fixed: totals.fixed + step.fixed,
+            flagged: totals.flagged + step.flagged,
+            excluded: totals.excluded + step.excluded,
+            unchanged: totals.unchanged + step.unchanged,
+          }),
+          {
+            rules: 0,
+            detected: 0,
+            fixed: 0,
+            flagged: 0,
+            excluded: 0,
+            unchanged: 0,
+          },
+        )
+      : null;
+  const cleaningFindings =
+    cleaning !== null ? cleaning.steps.filter((step) => step.detected > 0) : [];
 
   return (
     <section
@@ -455,8 +493,10 @@ export default function UploadSession() {
               data-testid="status-note"
               className="text-muted-foreground text-sm"
             >
-              Profiling is complete and changed nothing in your stored file.
-              Cleaning and analytics are not available in this build yet.
+              Profiling and audited cleaning are complete. Only the governed
+              whitespace trim ran; anything else stayed as uploaded.
+              Canonicalization and analytics are not available in this build
+              yet.
             </p>
           ) : null}
           {schema !== null ? (
@@ -512,7 +552,70 @@ export default function UploadSession() {
               ) : (
                 <p>No issue blocks the next stage.</p>
               )}
-              <p>Next stage: cleaning.</p>
+              <p>
+                This profile was taken before cleaning; the cleaning review
+                below shows what changed and what remains flagged.
+              </p>
+            </div>
+          ) : null}
+          {cleaning !== null && cleaningTotals !== null ? (
+            <div
+              data-testid="cleaning-panel"
+              className="flex flex-col gap-1 text-sm"
+            >
+              <p role="status">
+                Cleaning review: {cleaningTotals.detected} detected across{" "}
+                {cleaningTotals.rules} rule
+                {cleaningTotals.rules === 1 ? "" : "s"} — {cleaningTotals.fixed}{" "}
+                fixed, {cleaningTotals.flagged} flagged,{" "}
+                {cleaningTotals.excluded} excluded, {cleaningTotals.unchanged}{" "}
+                unchanged.
+              </p>
+              {cleaningTotals.fixed > 0 ? (
+                <p>
+                  Only the governed label-whitespace trim ran. No values were
+                  imputed, deleted, clipped, or deduplicated.
+                </p>
+              ) : (
+                <p>Nothing required the governed trim, so no values changed.</p>
+              )}
+              {cleaningFindings.length > 0 ? (
+                <ul className="list-disc pl-5">
+                  {cleaningFindings.map((step) => (
+                    <li key={`${step.ruleId}:${step.field}`}>
+                      {step.ruleId}
+                      {step.field !== "" ? ` (${step.field})` : ""}: detected{" "}
+                      {step.detected}, fixed {step.fixed}, flagged{" "}
+                      {step.flagged}, excluded {step.excluded}, unchanged{" "}
+                      {step.unchanged}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>No cleaning findings; every rule reported zero.</p>
+              )}
+              {cleaningTotals.flagged > 0 ? (
+                <p>
+                  {cleaningTotals.flagged} flagged issue
+                  {cleaningTotals.flagged === 1 ? "" : "s"} remain
+                  {cleaningTotals.flagged === 1 ? "s" : ""} for later stages;
+                  detected is not the same as fixed.
+                </p>
+              ) : (
+                <p>Nothing remains flagged.</p>
+              )}
+              {quality !== null &&
+              quality.issues.some(
+                (issue) => issue.blockedStage === "CANONICALIZATION",
+              ) ? (
+                <p>
+                  Next stage: canonicalization is gated by unresolved errors
+                  above, so no canonical work has started. The session is parked
+                  until the input is fixed or replaced.
+                </p>
+              ) : (
+                <p>Next stage: canonicalization.</p>
+              )}
             </div>
           ) : null}
           <div>

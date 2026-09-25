@@ -279,7 +279,7 @@ Suggested commit: `feat(profiling): add dataset and data-quality profiling`
 
 ## Phase 7 — Auditable cleaning
 
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
 ### Objective
 
@@ -287,21 +287,25 @@ Apply only approved transformations and record every outcome.
 
 ### Tasks
 
-- [ ] Implement documented whitespace normalization.
-- [ ] Convert canonical identifiers/postal codes to strings.
-- [ ] Standardize exact enum mappings.
-- [ ] Exclude fully-null, constant, duplicate-semantic, and privacy fields from canonical output.
-- [ ] Retain source fields in immutable raw storage.
-- [ ] Flag geography anomalies without inventing replacements.
-- [ ] Retain negative-profit and cancelled records.
-- [ ] Generate a cleaning summary and row/field-level audit log.
-- [ ] Support previewing what changed before export.
+- [x] Implement documented whitespace normalization. — DQ-CAT-005 trim on the governed label fields only (`LABEL_FIELDS + ENUM_FIELDS`: the six canonical-schema "string trimmed" labels plus the three "trimmed, case-sensitive" enum fields; `delivery_status` carries no trim annotation and is untouched). Whitespace aspect and enum-domain aspect are independent: every padded non-missing in-scope cell trims (including `" Rocket "` → `"Rocket"`, which stays unknown and flagged under DQ-CAT-002 — no coercion), internal whitespace/case preserved, whitespace-only cells left as missing. Whitespace means generic leading/trailing whitespace per Python `str.strip()` (spaces, tabs, newlines, NBSP — documented reading, probed in tests). `backend/app/cleaning.py` (`trim_scope`/`padding_mask`/`apply_trims`); `cleaning_trim.csv` integration (4 cells fixed across 4 fields; profiling CAT-005 row count 3 vs cleaning population 4 documented: profiling attributes padded-unknown enum rows to CAT-001/002/003 to avoid double-counting).
+- [x] Convert canonical identifiers/postal codes to strings. — Investigated no-op: staging already yields pyarrow-backed strings so IDs stay strings with zero changes (asserted byte-identical in tests); there is no canonical postal field (destination ZIP excluded by privacy), hence nothing to cast. Documented in `backend/app/cleaning.py`.
+- [x] Standardize exact enum mappings. — Exact-match semantics verified with zero coercion: unknown values (`Second Class`, `Corporate`, lowercase, padded-unknown) stay byte-identical and flagged under DQ-CAT-001/002/003 (never mapped, never blocking); value substitution into canonical structures belongs to Phase 8, which no cleaning rule authorizes early.
+- [x] Exclude fully-null, constant, duplicate-semantic, and privacy fields from canonical output. — Redundant, audit-only, unknown, and privacy-sensitive columns never materialize in `derived/cleaned.csv` (governed projection; DQ-PRIVACY-001/002 excluded counts, no values read); fully-null/constant mapped columns are carried as-is because no DQ rule authorizes dropping them (unapproved deletion is forbidden).
+- [x] Retain source fields in immutable raw storage. — SHA-256 verified before and after the cleaning pass; `raw.csv` never written; byte-identity asserted in every cleaning test.
+- [x] Flag geography anomalies without inventing replacements. — No governed geo value rule exists, so nothing is imputed or geocoded; precise-geo-like headers counted via DQ-PRIVACY-002 only. (`delivery_status` whitespace is outside the CAT-005 field set and left untouched — recorded governance gap, not guessed.)
+- [x] Retain negative-profit and cancelled records. — Negative/extreme profit, strict-cancellation, and suspected-fraud rows retained byte-identical (ADR-017, ADR-013); adversarial-test asserted.
+- [x] Generate a cleaning summary and row/field-level audit log. — `derived/cleaning_report.json` (per-rule/field `steps[{ruleId, field, detected, fixed, flagged, excluded, unchanged, reason}]`, totals, money reconciliation, output identity incl. `outputSha256`/`outputRows` and Phase-6 input identity) plus `GET /sessions/{id}/cleaning-report` in the exact contract shape; every step reconciles `detected == fixed + flagged + excluded + unchanged`. Torn-transition adoption recomputes the cleaned SHA and verifies the live profile identity before trusting stored metadata.
+- [x] Support previewing what changed before export. — The cleaning-report endpoint is observational (409 `NOT_READY` while pending, never executes work); the Upload view renders a cleaning-review panel (totals, per-rule counts, flagged remainder, next stage) that never claims success while flagged issues remain, and states the canonicalization gate (`CANONICALIZATION`-blocking errors → "gated … no canonical work has started … parked") instead of implying progress.
 
 ### Exit criteria
 
-- Every canonical change has a rule, reason, and affected count.
-- Re-running the same input produces the same output and log.
-- No unapproved imputation, deletion, clipping, or deduplication occurs.
+- [x] Every canonical change has a rule, reason, and affected count. — The sole value transformation is DQ-CAT-005; per-field steps carry rule, reason, and cell counts; only CAT-005 steps ever report `fixed > 0` (asserted).
+- [x] Re-running the same input produces the same output and log. — Idempotence (rerun byte-identical, torn-transition adoption identical), determinism (two uploads, same SHA/counts), and no-cumulative-change tests pass.
+- [x] No unapproved imputation, deletion, clipping, or deduplication occurs. — Adversarial battery proves duplicates/missing/malformed/numeric/date/leakage/unknown-enum/unknown-column retention; money reconciliation proves totals never move.
+
+Evidence: backend 173 tests green (28 Phase-7 tests: trim matrix, whitespace-definition probes, adversarial retention, audit reconciliation, idempotence incl. Latin-1, privacy probes, lifecycle incl. torn/corrupt adoption, guard release, CSV round-trip, 5k-row generated scale), frontend 25 tests green (cleaning-review panel, detected-vs-fixed copy, no-false-success, canonicalization-gate copy), tsc, ESLint 0 errors, Ruff, mypy strict, `vite build` green, live synthetic smoke (trim → `CANONICALIZING` with trimmed derived value + CAT-005 counts + stable raw SHA; ERROR travel with gate intact; unknown-enum retention; terminal-failure cleanup; reset no-resurrection).
+
+Pre-commit audit (2026-09-25): verified blockedStage enforcement point (gate enforced by Phase-8 canonicalization work per api-contract `DUPLICATE_ITEM_KEY`/`ORDER_INVARIANCE_CONFLICT` at the CANONICALIZING stage — entering the state parks at the gate, no waiver/new state invented); `cleaned.csv` authorized as internal derived working file (architecture §4; never served; minimal-transformation header/order choices documented, not a public contract); positional provenance + recorded alignment metadata sufficient for Phase-8 row-number materialization; CAT-005 field matrix cited per field (6 labels + 3 enums authorized, `delivery_status` not); padded-unknown precedence resolved to trim-with-still-flagged (no "unknown takes precedence" in governance); DQ-NUM-004/DQ-FILE-005 take no cleaning step (never evaluated / passed gate); privacy `excluded` counts are column-grain; money self-check is an implementation invariant (no new rule ID; same Decimal helpers as profiling; untouched columns asserted equal).
 
 Suggested commit: `feat(cleaning): add reproducible audited transformations`
 

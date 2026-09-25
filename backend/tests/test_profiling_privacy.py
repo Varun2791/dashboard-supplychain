@@ -119,7 +119,7 @@ def test_pii_looking_extras_never_enter_reports(
     session_id = upload_ok(client, content)
     assert (
         client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
-        == "CLEANING"
+        == "CANONICALIZING"
     )
     profile = client.get(f"/api/v1/sessions/{session_id}/profile").json()
     quality = client.get(f"/api/v1/sessions/{session_id}/data-quality").json()
@@ -152,7 +152,7 @@ def test_hostile_values_stay_inert_and_unreported(
     session_id = upload_ok(client, content)
     assert (
         client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
-        == "CLEANING"
+        == "CANONICALIZING"
     )
     profile = client.get(f"/api/v1/sessions/{session_id}/profile").json()
     quality = client.get(f"/api/v1/sessions/{session_id}/data-quality").json()
@@ -230,7 +230,7 @@ def test_profiling_logs_carry_counts_only(
         session_id = upload_ok(client, content)
     assert (
         client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
-        == "CLEANING"
+        == "CANONICALIZING"
     )
     log_text = "\n".join(record.getMessage() for record in caplog.records)
     for probe in ("SYN-ITEM-DUP-01", "WEIRD_STATUS", "not-a-date", "SYN-CUST-921"):

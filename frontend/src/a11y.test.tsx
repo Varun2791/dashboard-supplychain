@@ -151,23 +151,34 @@ describe("accessibility foundation", () => {
                   meta: {},
                   error: null,
                 }
-              : {
-                  data: {
-                    state: "CLEANING",
-                    stage: "CLEANING",
-                    progress: {
-                      completedStages: ["UPLOADING", "VALIDATING", "PROFILING"],
-                      currentStage: "CLEANING",
-                      remainingStages: [],
-                      note: "Cleaning is not implemented yet.",
-                    },
-                    startedAt: "2026-09-24T00:00:00",
-                    updatedAt: "2026-09-24T00:00:01",
+              : url.endsWith("/cleaning-report")
+                ? {
+                    data: { steps: [] },
+                    meta: {},
                     error: null,
-                  },
-                  meta: {},
-                  error: null,
-                };
+                  }
+                : {
+                    data: {
+                      state: "CANONICALIZING",
+                      stage: "CANONICALIZING",
+                      progress: {
+                        completedStages: [
+                          "UPLOADING",
+                          "VALIDATING",
+                          "PROFILING",
+                          "CLEANING",
+                        ],
+                        currentStage: "CANONICALIZING",
+                        remainingStages: [],
+                        note: "Cleaning is complete.",
+                      },
+                      startedAt: "2026-09-24T00:00:00",
+                      updatedAt: "2026-09-24T00:00:01",
+                      error: null,
+                    },
+                    meta: {},
+                    error: null,
+                  };
         return Promise.resolve(
           new Response(JSON.stringify(body), {
             status: 200,

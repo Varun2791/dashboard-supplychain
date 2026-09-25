@@ -1,9 +1,9 @@
-"""FastAPI application (Phase 5: ingestion + schema validation).
+"""FastAPI application (Phase 7: ingestion + schema + profiling + cleaning).
 
 Exposes the liveness endpoint plus the upload/status/reset routes and the
-schema report route from `docs/api-contract.md`. Profiling, cleaning,
-canonicalization, KPI, and export routes belong to later phases and must not
-be added here.
+schema, profile, data-quality, and cleaning-report routes from
+`docs/api-contract.md`. Canonicalization, KPI, and export routes belong to
+later phases and must not be added here.
 """
 
 from collections.abc import AsyncIterator
@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from app.api.sessions import ingestion_error_envelope
 from app.api.sessions import router as sessions_router
+from app.cleaning import recover_cleaning_sessions
 from app.config import settings
 from app.ingestion_errors import IngestionError
 from app.profiling import recover_profiling_sessions
@@ -52,13 +53,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     Covers the crash window between a 202 response and its post-response
     task (interrupted tasks leave no queue behind by design). Validation
-    recovery chains into profiling, and a second sweep covers sessions left
-    PROFILING by a restart; expired/corrupt trees are swept first, valid
-    resumable sessions are never deleted, later stages never start.
+    recovery chains into profiling and cleaning, and further sweeps cover
+    sessions left PROFILING or CLEANING by a restart; expired/corrupt trees
+    are swept first, valid resumable sessions are never deleted, later
+    stages never start.
     """
     sweep_sessions(settings.session_root, datetime.now())
     recover_validating_sessions(settings.session_root)
     recover_profiling_sessions(settings.session_root)
+    recover_cleaning_sessions(settings.session_root)
     yield
 
 

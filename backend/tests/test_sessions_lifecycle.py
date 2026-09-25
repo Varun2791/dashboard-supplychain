@@ -270,5 +270,6 @@ def test_manifest_model_rejects_personal_payload_shape() -> None:
         "error",
         "schemaArtifact",
         "profileArtifact",
+        "cleaningArtifact",
     }
     assert set(SessionManifest.model_fields) == allowed

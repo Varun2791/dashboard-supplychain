@@ -1,4 +1,4 @@
-"""Phase-6 session routes: upload, status, schema, profile, data-quality, reset.
+"""Phase-7 routes: upload, status, schema, profile, data-quality, cleaning, reset.
 
 Handlers validate transport, call the ingestion/session services, and map
 domain errors to the typed error envelope. No supply-chain math lives here:
@@ -37,17 +37,22 @@ from app.ingestion_errors import (
     SCHEMA_MISSING_COLUMN,
     SESSION_EXPIRED,
     SESSION_NOT_FOUND,
+    STAGE_CLEANING,
     STAGE_PROFILING,
     STAGE_VALIDATING,
     IngestionError,
 )
 from app.schema_validation import run_schema_validation
 from app.schemas import (
+    STATE_CANONICALIZING,
     STATE_EXPIRED,
     STATE_FAILED,
     STATE_PROFILING,
     STATE_VALIDATING,
     ApiErrorModel,
+    CleaningArtifact,
+    CleaningReportData,
+    CleaningReportResponse,
     DataQualityData,
     DataQualityResponse,
     DataQualitySummary,
@@ -562,6 +567,69 @@ async def session_data_quality(
     )
     return DataQualityResponse(
         data=DataQualityData(summary=summary, issues=issues),
+        meta=_base_meta(session_id=session_id, session_state=manifest.state),
+        error=None,
+    )
+
+
+def _cleaning_artifact_or_raise(
+    session_id: str,
+) -> tuple[SessionManifest, CleaningArtifact]:
+    """Return the stored cleaning report for CANONICALIZING sessions.
+
+    Purely observational: never executes cleaning. Pending sessions get
+    the contract 409 NOT_READY; terminal sessions re-surface their stored
+    error without leaking values.
+    """
+    manifest, paths = _resolve_session(session_id)
+    if manifest.state == STATE_FAILED:
+        stored = manifest.error
+        code = stored.code if stored is not None else INTERNAL_STAGE_ERROR
+        raise IngestionError(
+            code,
+            stored.stage if stored is not None else STAGE_CLEANING,
+            stored.message
+            if stored is not None
+            else "Cleaning could not be completed. Upload the file again.",
+            _TERMINAL_STATUS.get(code, 500),
+            dict(stored.details) if stored is not None else {},
+            session_id=session_id,
+            session_state=manifest.state,
+        )
+    if manifest.state != STATE_CANONICALIZING or manifest.cleaningArtifact is None:
+        raise IngestionError(
+            NOT_READY,
+            STAGE_CLEANING,
+            "Auditable cleaning has not completed yet. "
+            "Check the session status and try again shortly.",
+            409,
+            {"state": manifest.state},
+            session_id=session_id,
+            session_state=manifest.state,
+        )
+    artifact = session_store.read_cleaning_report(paths)
+    if artifact is None:  # pragma: no cover - written with the transition
+        logger.warning("cleaning_artifact_unreadable")
+        raise IngestionError(
+            INTERNAL_STAGE_ERROR,
+            STAGE_CLEANING,
+            "The cleaning report could not be read. Upload the file again.",
+            500,
+            {},
+            session_id=session_id,
+            session_state=manifest.state,
+        )
+    return manifest, artifact
+
+
+@router.get(
+    "/sessions/{session_id}/cleaning-report", response_model=CleaningReportResponse
+)
+async def session_cleaning_report(session_id: str) -> CleaningReportResponse:
+    """Return the audited cleaning log (contract shape exactly)."""
+    manifest, artifact = _cleaning_artifact_or_raise(session_id)
+    return CleaningReportResponse(
+        data=CleaningReportData(steps=artifact.steps),
         meta=_base_meta(session_id=session_id, session_state=manifest.state),
         error=None,
     )

@@ -83,3 +83,20 @@ export interface DataQualityData {
   };
   issues: DataQualityIssue[];
 }
+
+/** One audited cleaning outcome (contract shape; counts only, never values). */
+export interface CleaningStep {
+  ruleId: string;
+  field: string;
+  detected: number;
+  fixed: number;
+  flagged: number;
+  excluded: number;
+  unchanged: number;
+  reason: string;
+}
+
+/** `GET /sessions/{id}/cleaning-report` payload (contract shape). */
+export interface CleaningReportData {
+  steps: CleaningStep[];
+}

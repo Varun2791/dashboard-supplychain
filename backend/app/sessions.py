@@ -35,11 +35,13 @@ from pydantic import ValidationError
 from app.config import settings
 from app.schemas import (
     FORWARD_STATES,
+    STATE_CANONICALIZING,
     STATE_CLEANING,
     STATE_FAILED,
     STATE_PROFILING,
     STATE_UPLOADING,
     STATE_VALIDATING,
+    CleaningArtifact,
     ProfilingArtifact,
     SchemaReport,
     SessionManifest,
@@ -55,6 +57,8 @@ DERIVED_DIRNAME = "derived"
 EXPORTS_DIRNAME = "exports"
 SCHEMA_ARTIFACT_FILENAME = "schema_report.json"
 PROFILING_ARTIFACT_FILENAME = "profiling_report.json"
+CLEANING_ARTIFACT_FILENAME = "cleaning_report.json"
+CLEANED_FILENAME = "cleaned.csv"
 
 
 def utcnow_naive_iso() -> str:
@@ -219,7 +223,23 @@ def make_cleaning_progress() -> SessionProgress:
         completedStages=[STATE_UPLOADING, STATE_VALIDATING, STATE_PROFILING],
         currentStage=STATE_CLEANING,
         remainingStages=[stage for stage in FORWARD_STATES[current_index + 1 :]],
-        note="Cleaning is not implemented yet.",
+        note="Cleaning is running; results are not available yet.",
+    )
+
+
+def make_canonicalizing_progress() -> SessionProgress:
+    """Truthful Phase-7 progress: CLEANING done, parked at CANONICALIZING."""
+    current_index = FORWARD_STATES.index(STATE_CANONICALIZING)
+    return SessionProgress(
+        completedStages=[
+            STATE_UPLOADING,
+            STATE_VALIDATING,
+            STATE_PROFILING,
+            STATE_CLEANING,
+        ],
+        currentStage=STATE_CANONICALIZING,
+        remainingStages=[stage for stage in FORWARD_STATES[current_index + 1 :]],
+        note="Cleaning is complete; canonicalization is not implemented yet.",
     )
 
 
@@ -239,6 +259,31 @@ def read_profiling_report(paths: SessionPaths) -> ProfilingArtifact | None:
         with open(profiling_artifact_path(paths), encoding="utf-8") as handle:
             payload = json.load(handle)
         return ProfilingArtifact.model_validate(payload)
+    except (OSError, ValueError, ValidationError):
+        return None
+
+
+def cleaning_artifact_path(paths: SessionPaths) -> str:
+    """Derived-area location of the cleaning report (raw stays untouched)."""
+    return os.path.join(paths.derived, CLEANING_ARTIFACT_FILENAME)
+
+
+def cleaned_path(paths: SessionPaths) -> str:
+    """Derived-area location of the internal cleaned rows (raw stays untouched)."""
+    return os.path.join(paths.derived, CLEANED_FILENAME)
+
+
+def write_cleaning_report(paths: SessionPaths, report: CleaningArtifact) -> None:
+    """Persist the cleaning report atomically into `derived/`."""
+    _atomic_write_json(cleaning_artifact_path(paths), report.model_dump_json())
+
+
+def read_cleaning_report(paths: SessionPaths) -> CleaningArtifact | None:
+    """Load the cleaning report; corrupt/missing input yields None."""
+    try:
+        with open(cleaning_artifact_path(paths), encoding="utf-8") as handle:
+            payload = json.load(handle)
+        return CleaningArtifact.model_validate(payload)
     except (OSError, ValueError, ValidationError):
         return None
 

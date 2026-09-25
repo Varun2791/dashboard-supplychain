@@ -121,9 +121,10 @@ def test_validation_completes_without_any_polling(
         session_store.session_paths(session_root, session_id)
     )
     assert manifest is not None
-    assert manifest.state == "CLEANING"
+    assert manifest.state == "CANONICALIZING"
     assert manifest.schemaArtifact is not None
     assert manifest.profileArtifact is not None
+    assert manifest.cleaningArtifact is not None
 
 
 def test_get_status_does_not_execute_validation(
@@ -168,16 +169,18 @@ def test_worker_rerun_is_harmless(client: TestClient, session_root: str) -> None
     session_id = upload_ok(client, FIXTURE_BYTES)
     manifest = run_schema_validation(session_id)
     assert manifest is not None
-    assert manifest.state == "CLEANING"
+    assert manifest.state == "CANONICALIZING"
     paths = session_store.session_paths(session_root, session_id)
     assert os.path.isfile(os.path.join(paths.derived, "schema_report.json"))
     assert os.path.isfile(os.path.join(paths.derived, "profiling_report.json"))
+    assert os.path.isfile(os.path.join(paths.derived, "cleaning_report.json"))
+    assert os.path.isfile(os.path.join(paths.derived, "cleaned.csv"))
 
 
 def test_recover_validating_sessions_covers_crash_window(
     client: TestClient, session_root: str
 ) -> None:
-    """Startup recovery runs ONLY the bounded Phase-5 step for leftovers."""
+    """Startup recovery chains validation into profiling and cleaning."""
     from datetime import datetime, timedelta
 
     os.makedirs(session_root, exist_ok=True)
@@ -198,7 +201,7 @@ def test_recover_validating_sessions_covers_crash_window(
     good_manifest = session_store.read_manifest(
         session_store.session_paths(session_root, good)
     )
-    assert good_manifest is not None and good_manifest.state == "CLEANING"
+    assert good_manifest is not None and good_manifest.state == "CANONICALIZING"
     bad_manifest = session_store.read_manifest(
         session_store.session_paths(session_root, bad)
     )
@@ -207,25 +210,28 @@ def test_recover_validating_sessions_covers_crash_window(
     assert os.path.isdir(stale_paths.root)
 
 
-def test_compatible_fixture_advances_through_profiling_to_cleaning(
+def test_compatible_fixture_advances_through_cleaning_to_canonicalizing(
     client: TestClient, session_root: str
 ) -> None:
     session_id = upload_ok(client, FIXTURE_BYTES)
     response = client.get(f"/api/v1/sessions/{session_id}/status")
     assert response.status_code == 200
     data = response.json()["data"]
-    assert data["state"] == "CLEANING"
-    assert data["stage"] == "CLEANING"
-    assert data["progress"]["currentStage"] == "CLEANING"
+    assert data["state"] == "CANONICALIZING"
+    assert data["stage"] == "CANONICALIZING"
+    assert data["progress"]["currentStage"] == "CANONICALIZING"
     assert data["progress"]["completedStages"] == [
         "UPLOADING",
         "VALIDATING",
         "PROFILING",
+        "CLEANING",
     ]
     assert data["error"] is None
     paths = session_store.session_paths(session_root, session_id)
     assert os.path.isfile(os.path.join(paths.derived, "schema_report.json"))
     assert os.path.isfile(os.path.join(paths.derived, "profiling_report.json"))
+    assert os.path.isfile(os.path.join(paths.derived, "cleaning_report.json"))
+    assert os.path.isfile(os.path.join(paths.derived, "cleaned.csv"))
     assert os.path.isfile(paths.raw)  # compatible sessions keep raw
 
 
@@ -284,7 +290,7 @@ def test_extra_column_does_not_reject(client: TestClient, session_root: str) -> 
     lines[2] += ",Silver"
     session_id = upload_ok(client, "\n".join(lines).encode())
     status = client.get(f"/api/v1/sessions/{session_id}/status")
-    assert status.json()["data"]["state"] == "CLEANING"
+    assert status.json()["data"]["state"] == "CANONICALIZING"
     schema = client.get(f"/api/v1/sessions/{session_id}/schema")
     data = schema.json()["data"]
     assert data["missingCritical"] == []
@@ -418,7 +424,7 @@ def test_order_id_repetition_is_not_a_schema_error(
     content = "\n".join([lines[0], lines[1], lines[1]]).encode()
     session_id = upload_ok(client, content)
     status = client.get(f"/api/v1/sessions/{session_id}/status")
-    assert status.json()["data"]["state"] == "CLEANING"
+    assert status.json()["data"]["state"] == "CANONICALIZING"
 
 
 def test_path_like_header_is_unrecognized_and_safe(
@@ -515,8 +521,9 @@ def test_garbage_body_still_validates_schema(
     session_id = upload_ok(client, f"{header}\n{body}\n".encode())
     status = client.get(f"/api/v1/sessions/{session_id}/status")
     # Garbage values become parse-failure/flagged DQ findings, never a
-    # schema or profiling failure: the session still settles at CLEANING.
-    assert status.json()["data"]["state"] == "CLEANING"
+    # schema, profiling, or cleaning failure: the session still settles
+    # at CANONICALIZING.
+    assert status.json()["data"]["state"] == "CANONICALIZING"
 
 
 def test_raw_sha_stable_through_validation(
