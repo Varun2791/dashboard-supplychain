@@ -3,12 +3,16 @@ import { Button } from "@/components/ui/button";
 import {
   ApiRequestError,
   deleteSession,
+  fetchDataQuality,
+  fetchProfile,
   fetchSchemaReport,
   fetchSessionStatus,
   uploadSession,
 } from "@/lib/api";
 import type {
   ApiErrorPayload,
+  DataQualityData,
+  ProfileData,
   SchemaReportData,
   UploadAcceptedData,
 } from "@/lib/api";
@@ -18,7 +22,7 @@ const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 const MAX_STATUS_POLLS = 6;
 const POLL_INTERVAL_MS = 1500;
 /** States that keep the status check running (bounded by MAX_STATUS_POLLS). */
-const CONTINUING_STATES = new Set(["UPLOADING", "VALIDATING"]);
+const CONTINUING_STATES = new Set(["UPLOADING", "VALIDATING", "PROFILING"]);
 
 const ERROR_GUIDANCE: Record<string, string> = {
   EMPTY_FILE:
@@ -129,13 +133,15 @@ export default function UploadSession() {
   const [pollSettled, setPollSettled] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [schema, setSchema] = useState<SchemaReportData | null>(null);
-  const schemaLoadingRef = useRef(false);
+  const [profile, setProfile] = useState<ProfileData | null>(null);
+  const [quality, setQuality] = useState<DataQualityData | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   // Bounded status check: confirm the stored session state, then stop.
   // VALIDATING sessions resolve through schema validation on the server;
-  // a PROFILING session loads its schema report once, a FAILED session
-  // surfaces its stored error. Polling never waits for later stages.
+  // a CLEANING session loads its schema, profile, and data-quality reports
+  // once each, a FAILED session surfaces its stored error. Polling never
+  // waits for later stages.
   useEffect(() => {
     if (phase !== "active" || session === null || pollSettled) {
       return;
@@ -155,37 +161,37 @@ export default function UploadSession() {
           setPollSettled(true);
           return;
         }
-        if (status.state === "PROFILING") {
-          if (!schemaLoadingRef.current) {
-            schemaLoadingRef.current = true;
-            try {
-              const report = await fetchSchemaReport(session.sessionId);
-              if (cancelled) {
-                return;
-              }
-              setSchema(report);
-              setPollSettled(true);
-            } catch (error) {
-              if (cancelled) {
-                return;
-              }
-              if (
-                error instanceof ApiRequestError &&
-                error.code === "NOT_READY" &&
-                attempt < MAX_STATUS_POLLS
-              ) {
-                // Schema still pending: retry through the poll loop.
-                schemaLoadingRef.current = false;
-                timer = window.setTimeout(() => {
-                  void check(attempt + 1);
-                }, POLL_INTERVAL_MS);
-              } else {
-                setFailure(toFailure(error));
-                setPollSettled(true);
-              }
+        if (status.state === "CLEANING") {
+          try {
+            const [report, profileReport, qualityReport] = await Promise.all([
+              fetchSchemaReport(session.sessionId),
+              fetchProfile(session.sessionId),
+              fetchDataQuality(session.sessionId),
+            ]);
+            if (cancelled) {
+              return;
             }
-          } else {
+            setSchema(report);
+            setProfile(profileReport);
+            setQuality(qualityReport);
             setPollSettled(true);
+          } catch (error) {
+            if (cancelled) {
+              return;
+            }
+            if (
+              error instanceof ApiRequestError &&
+              error.code === "NOT_READY" &&
+              attempt < MAX_STATUS_POLLS
+            ) {
+              // Reports still pending: retry through the poll loop.
+              timer = window.setTimeout(() => {
+                void check(attempt + 1);
+              }, POLL_INTERVAL_MS);
+            } else {
+              setFailure(toFailure(error));
+              setPollSettled(true);
+            }
           }
           return;
         }
@@ -251,7 +257,8 @@ export default function UploadSession() {
     setProgress(null);
     setFailure(null);
     setSchema(null);
-    schemaLoadingRef.current = false;
+    setProfile(null);
+    setQuality(null);
     setSessionState(null);
     setPollCount(0);
     setPollSettled(false);
@@ -287,7 +294,8 @@ export default function UploadSession() {
     setPollSettled(false);
     setFailure(null);
     setSchema(null);
-    schemaLoadingRef.current = false;
+    setProfile(null);
+    setQuality(null);
     setProgress(null);
     setPhase("idle");
   }
@@ -447,9 +455,8 @@ export default function UploadSession() {
               data-testid="status-note"
               className="text-muted-foreground text-sm"
             >
-              Profiling, cleaning, and analytics are not available in this build
-              yet. Your stored file is unchanged and ready for the next
-              processing stage once it lands.
+              Profiling is complete and changed nothing in your stored file.
+              Cleaning and analytics are not available in this build yet.
             </p>
           ) : null}
           {schema !== null ? (
@@ -469,6 +476,43 @@ export default function UploadSession() {
                   : ""}
                 .
               </p>
+            </div>
+          ) : null}
+          {profile !== null && quality !== null ? (
+            <div
+              data-testid="quality-panel"
+              className="flex flex-col gap-1 text-sm"
+            >
+              <p role="status">
+                Value-level profiling is complete. No values were repaired,
+                removed, or reordered.
+              </p>
+              <p>
+                {profile.rows} order-item line{profile.rows === 1 ? "" : "s"}{" "}
+                assessed across {profile.columns} mapped fields.
+              </p>
+              <p>
+                {quality.summary.rulesEvaluated} data-quality rules checked:{" "}
+                {quality.summary.rulesTriggered} issue
+                {quality.summary.rulesTriggered === 1 ? "" : "s"} found.
+              </p>
+              <ul className="list-disc pl-5">
+                <li>Errors: {quality.summary.errors}</li>
+                <li>Warnings: {quality.summary.warnings}</li>
+                <li>Informational notes: {quality.summary.infos}</li>
+              </ul>
+              {quality.summary.blockingIssues > 0 ? (
+                <p>
+                  {quality.summary.blockingIssues} issue
+                  {quality.summary.blockingIssues === 1 ? "" : "s"} block
+                  {quality.summary.blockingIssues === 1 ? "s" : ""} a later
+                  stage. Details stay available in the report; nothing was fixed
+                  automatically.
+                </p>
+              ) : (
+                <p>No issue blocks the next stage.</p>
+              )}
+              <p>Next stage: cleaning.</p>
             </div>
           ) : null}
           <div>

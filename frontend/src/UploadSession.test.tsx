@@ -22,30 +22,6 @@ const ACCEPTED_202 = {
   error: null,
 };
 
-const STATUS_PROFILING = {
-  data: {
-    state: "PROFILING",
-    stage: "PROFILING",
-    progress: {
-      completedStages: ["UPLOADING", "VALIDATING"],
-      currentStage: "PROFILING",
-      remainingStages: ["CLEANING"],
-      note: "Profiling is not implemented yet.",
-    },
-    startedAt: "2026-09-24T00:00:00",
-    updatedAt: "2026-09-24T00:00:01",
-    error: null,
-  },
-  meta: {
-    appVersion: "0.1.0",
-    schemaVersion: 1,
-    generatedAt: "2026-09-24T00:00:01",
-    sessionId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    sessionState: "PROFILING",
-  },
-  error: null,
-};
-
 const STATUS_FAILED_SCHEMA = {
   data: {
     state: "FAILED",
@@ -99,6 +75,144 @@ const SCHEMA_OK = {
   },
   error: null,
 };
+
+const STATUS_CLEANING = {
+  data: {
+    state: "CLEANING",
+    stage: "CLEANING",
+    progress: {
+      completedStages: ["UPLOADING", "VALIDATING", "PROFILING"],
+      currentStage: "CLEANING",
+      remainingStages: ["CANONICALIZING"],
+      note: "Cleaning is not implemented yet.",
+    },
+    startedAt: "2026-09-24T00:00:00",
+    updatedAt: "2026-09-24T00:00:02",
+    error: null,
+  },
+  meta: {
+    appVersion: "0.1.0",
+    schemaVersion: 1,
+    generatedAt: "2026-09-24T00:00:02",
+    sessionId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    sessionState: "CLEANING",
+  },
+  error: null,
+};
+
+const PROFILE_OK = {
+  data: {
+    rows: 4,
+    columns: 25,
+    grain: "order_item",
+    missingness: [],
+    cardinality: [],
+    duplicates: { exact: 0, keyDupes: 0 },
+    invarianceConflicts: {
+      ordersChecked: 4,
+      conflictingOrders: 0,
+      byField: [],
+    },
+  },
+  meta: {
+    appVersion: "0.1.0",
+    schemaVersion: 1,
+    generatedAt: "2026-09-24T00:00:02",
+    sessionId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    sessionState: "CLEANING",
+  },
+  error: null,
+};
+
+const QUALITY_OK = {
+  data: {
+    summary: {
+      rulesEvaluated: 20,
+      rulesTriggered: 2,
+      errors: 0,
+      warnings: 1,
+      infos: 1,
+      blockingIssues: 0,
+    },
+    issues: [
+      {
+        ruleId: "DQ-CAT-005",
+        severity: "INFO",
+        count: 1,
+        treatment: "detected",
+        blockedStage: null,
+      },
+      {
+        ruleId: "DQ-NUM-002",
+        severity: "WARNING",
+        count: 1,
+        treatment: "flagged",
+        blockedStage: null,
+      },
+    ],
+  },
+  meta: {
+    appVersion: "0.1.0",
+    schemaVersion: 1,
+    generatedAt: "2026-09-24T00:00:02",
+    sessionId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    sessionState: "CLEANING",
+  },
+  error: null,
+};
+
+const QUALITY_BLOCKED = {
+  data: {
+    summary: {
+      rulesEvaluated: 20,
+      rulesTriggered: 1,
+      errors: 1,
+      warnings: 0,
+      infos: 0,
+      blockingIssues: 1,
+    },
+    issues: [
+      {
+        ruleId: "DQ-KEY-001",
+        severity: "ERROR",
+        count: 2,
+        treatment: "flagged",
+        blockedStage: "CANONICALIZATION",
+      },
+    ],
+  },
+  meta: {
+    appVersion: "0.1.0",
+    schemaVersion: 1,
+    generatedAt: "2026-09-24T00:00:02",
+    sessionId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    sessionState: "CLEANING",
+  },
+  error: null,
+};
+
+/** Route stubbed fetch calls to the Phase-6 report fixtures by URL suffix. */
+function stubPhase6Fetch(qualityBody: unknown = QUALITY_OK): void {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: unknown) => {
+      const url = String(input);
+      const body = url.endsWith("/schema")
+        ? SCHEMA_OK
+        : url.endsWith("/profile")
+          ? PROFILE_OK
+          : url.endsWith("/data-quality")
+            ? qualityBody
+            : STATUS_CLEANING;
+      return Promise.resolve(
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    }),
+  );
+}
 
 const STATUS_VALIDATING = {
   data: {
@@ -380,19 +494,7 @@ describe("UploadSession", () => {
   });
 
   it("shows the schema compatibility result for a compatible file", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((input: unknown) => {
-        const url = String(input);
-        const body = url.endsWith("/schema") ? SCHEMA_OK : STATUS_PROFILING;
-        return Promise.resolve(
-          new Response(JSON.stringify(body), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          }),
-        );
-      }),
-    );
+    stubPhase6Fetch();
     render(<UploadSession />);
     fireEvent.change(screen.getByTestId("file-input"), {
       target: { files: [csvFile()] },
@@ -402,6 +504,38 @@ describe("UploadSession", () => {
     expect(panel).toHaveTextContent(/schema check passed/i);
     expect(panel).toHaveTextContent(/2 of 3 columns mapped/i);
     expect(panel).toHaveTextContent(/1 extra column ignored/i);
+  });
+
+  it("shows the profiling summary without repaired values", async () => {
+    stubPhase6Fetch();
+    render(<UploadSession />);
+    fireEvent.change(screen.getByTestId("file-input"), {
+      target: { files: [csvFile()] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^upload$/i }));
+    const panel = await screen.findByTestId("quality-panel");
+    expect(panel).toHaveTextContent(/no values were repaired/i);
+    expect(panel).toHaveTextContent(/4 order-item lines assessed/i);
+    expect(panel).toHaveTextContent(/across 25 mapped fields/i);
+    expect(panel).toHaveTextContent(/20 data-quality rules checked/i);
+    expect(panel).toHaveTextContent(/2 issues found/i);
+    expect(panel).toHaveTextContent(/Errors: 0/i);
+    expect(panel).toHaveTextContent(/Warnings: 1/i);
+    expect(panel).toHaveTextContent(/Informational notes: 1/i);
+    expect(panel).toHaveTextContent(/no issue blocks the next stage/i);
+    expect(panel).toHaveTextContent(/next stage: cleaning/i);
+  });
+
+  it("states blocking issues without alarming language", async () => {
+    stubPhase6Fetch(QUALITY_BLOCKED);
+    render(<UploadSession />);
+    fireEvent.change(screen.getByTestId("file-input"), {
+      target: { files: [csvFile()] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^upload$/i }));
+    const panel = await screen.findByTestId("quality-panel");
+    expect(panel).toHaveTextContent(/1 issue blocks a later stage/i);
+    expect(panel).toHaveTextContent(/nothing was fixed automatically/i);
   });
 
   it("shows missing columns for an incompatible file", async () => {
@@ -429,31 +563,39 @@ describe("UploadSession", () => {
     expect(panel).toHaveTextContent(/SCHEMA_MISSING_COLUMN/);
   });
 
-  it("treats a pending schema report as retryable, not a failure", async () => {
+  it("treats pending reports as retryable, not a failure", async () => {
     vi.useFakeTimers();
-    let schemaCalls = 0;
+    let reportCalls = 0;
     vi.stubGlobal(
       "fetch",
       vi.fn((input: unknown) => {
         const url = String(input);
-        let body: unknown = STATUS_PROFILING;
+        let body: unknown = STATUS_CLEANING;
         let status = 200;
-        if (url.endsWith("/schema")) {
-          schemaCalls += 1;
-          if (schemaCalls === 1) {
+        if (
+          url.endsWith("/schema") ||
+          url.endsWith("/profile") ||
+          url.endsWith("/data-quality")
+        ) {
+          reportCalls += 1;
+          if (reportCalls === 1) {
             status = 409;
             body = {
               data: null,
               meta: {},
               error: {
                 code: "NOT_READY",
-                stage: "VALIDATING",
-                message: "Schema validation has not completed yet.",
-                details: { state: "VALIDATING" },
+                stage: "PROFILING",
+                message: "Value-level profiling has not completed yet.",
+                details: { state: "CLEANING" },
               },
             };
-          } else {
+          } else if (url.endsWith("/schema")) {
             body = SCHEMA_OK;
+          } else if (url.endsWith("/profile")) {
+            body = PROFILE_OK;
+          } else {
+            body = QUALITY_OK;
           }
         }
         return Promise.resolve(
@@ -475,6 +617,7 @@ describe("UploadSession", () => {
       await vi.advanceTimersByTimeAsync(5000);
     });
     expect(screen.getByTestId("schema-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("quality-panel")).toBeInTheDocument();
     expect(screen.queryByTestId("error-panel")).not.toBeInTheDocument();
   });
 
@@ -484,19 +627,22 @@ describe("UploadSession", () => {
       "fetch",
       vi.fn((input: unknown) => {
         const url = String(input);
-        const body = url.endsWith("/schema")
-          ? {
-              data: {
-                sourceColumns: [hostile],
-                mapping: [
-                  { source: hostile, canonical: null, class: "unknown" },
-                ],
-                missingCritical: [],
-              },
-              meta: {},
-              error: null,
-            }
-          : STATUS_PROFILING;
+        let body: unknown = STATUS_CLEANING;
+        if (url.endsWith("/schema")) {
+          body = {
+            data: {
+              sourceColumns: [hostile],
+              mapping: [{ source: hostile, canonical: null, class: "unknown" }],
+              missingCritical: [],
+            },
+            meta: {},
+            error: null,
+          };
+        } else if (url.endsWith("/profile")) {
+          body = PROFILE_OK;
+        } else if (url.endsWith("/data-quality")) {
+          body = QUALITY_OK;
+        }
         return Promise.resolve(
           new Response(JSON.stringify(body), {
             status: 200,
@@ -514,6 +660,7 @@ describe("UploadSession", () => {
     // path below would render names as text. Either way no script element
     // may exist and markup must be escaped.
     await screen.findByTestId("schema-panel");
+    await screen.findByTestId("quality-panel");
     expect(container.querySelector("script")).toBeNull();
     expect(container.innerHTML).not.toContain("<script>alert");
   });

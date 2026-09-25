@@ -117,23 +117,57 @@ describe("accessibility foundation", () => {
               meta: {},
               error: null,
             }
-          : {
-              data: {
-                state: "PROFILING",
-                stage: "PROFILING",
-                progress: {
-                  completedStages: ["UPLOADING", "VALIDATING"],
-                  currentStage: "PROFILING",
-                  remainingStages: [],
-                  note: "Profiling is not implemented yet.",
+          : url.endsWith("/profile")
+            ? {
+                data: {
+                  rows: 2,
+                  columns: 2,
+                  grain: "order_item",
+                  missingness: [],
+                  cardinality: [],
+                  duplicates: { exact: 0, keyDupes: 0 },
+                  invarianceConflicts: {
+                    ordersChecked: 2,
+                    conflictingOrders: 0,
+                    byField: [],
+                  },
                 },
-                startedAt: "2026-09-24T00:00:00",
-                updatedAt: "2026-09-24T00:00:01",
+                meta: {},
                 error: null,
-              },
-              meta: {},
-              error: null,
-            };
+              }
+            : url.endsWith("/data-quality")
+              ? {
+                  data: {
+                    summary: {
+                      rulesEvaluated: 20,
+                      rulesTriggered: 0,
+                      errors: 0,
+                      warnings: 0,
+                      infos: 0,
+                      blockingIssues: 0,
+                    },
+                    issues: [],
+                  },
+                  meta: {},
+                  error: null,
+                }
+              : {
+                  data: {
+                    state: "CLEANING",
+                    stage: "CLEANING",
+                    progress: {
+                      completedStages: ["UPLOADING", "VALIDATING", "PROFILING"],
+                      currentStage: "CLEANING",
+                      remainingStages: [],
+                      note: "Cleaning is not implemented yet.",
+                    },
+                    startedAt: "2026-09-24T00:00:00",
+                    updatedAt: "2026-09-24T00:00:01",
+                    error: null,
+                  },
+                  meta: {},
+                  error: null,
+                };
         return Promise.resolve(
           new Response(JSON.stringify(body), {
             status: 200,
@@ -152,6 +186,7 @@ describe("accessibility foundation", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /^upload$/i }));
     expect(await screen.findByTestId("schema-panel")).toBeInTheDocument();
+    expect(await screen.findByTestId("quality-panel")).toBeInTheDocument();
     expect(await axe(container)).toHaveNoViolations();
   });
 });

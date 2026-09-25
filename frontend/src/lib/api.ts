@@ -1,5 +1,7 @@
 import type {
   ApiErrorPayload,
+  DataQualityData,
+  ProfileData,
   SchemaReportData,
   SessionStatusData,
   UploadAcceptedData,
@@ -7,6 +9,8 @@ import type {
 
 export type {
   ApiErrorPayload,
+  DataQualityData,
+  ProfileData,
   SchemaReportData,
   SessionStatusData,
   UploadAcceptedData,
@@ -251,6 +255,66 @@ export async function fetchSchemaReport(
   const { message, code, details } = envelopeError(
     payload,
     "Could not read the schema report.",
+  );
+  throw new ApiRequestError(response.status, message, code, details);
+}
+
+/** Read the Phase-6 pre-cleaning profile (contract shape; counts only). */
+export async function fetchProfile(sessionId: string): Promise<ProfileData> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `${API_BASE}/api/v1/sessions/${encodeURIComponent(sessionId)}/profile`,
+    );
+  } catch {
+    throw new ApiRequestError(
+      0,
+      "Could not reach the local server. Start the backend and try again.",
+    );
+  }
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  if (response.ok) {
+    return (payload as { data: ProfileData }).data;
+  }
+  const { message, code, details } = envelopeError(
+    payload,
+    "Could not read the profiling report.",
+  );
+  throw new ApiRequestError(response.status, message, code, details);
+}
+
+/** Read the Phase-6 data-quality issues (contract shape; counts only). */
+export async function fetchDataQuality(
+  sessionId: string,
+): Promise<DataQualityData> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `${API_BASE}/api/v1/sessions/${encodeURIComponent(sessionId)}/data-quality`,
+    );
+  } catch {
+    throw new ApiRequestError(
+      0,
+      "Could not reach the local server. Start the backend and try again.",
+    );
+  }
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  if (response.ok) {
+    return (payload as { data: DataQualityData }).data;
+  }
+  const { message, code, details } = envelopeError(
+    payload,
+    "Could not read the data-quality report.",
   );
   throw new ApiRequestError(response.status, message, code, details);
 }

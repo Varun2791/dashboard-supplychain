@@ -1,8 +1,8 @@
-"""Phase-4 session routes: upload, status, and reset.
+"""Phase-6 session routes: upload, status, schema, profile, data-quality, reset.
 
 Handlers validate transport, call the ingestion/session services, and map
-domain errors to the typed error envelope. No supply-chain logic lives here:
-a structurally valid CSV is accepted regardless of its columns.
+domain errors to the typed error envelope. No supply-chain math lives here:
+profiling results are read from the derived artifact, never recomputed.
 """
 
 from __future__ import annotations
@@ -31,10 +31,13 @@ from app.ingestion_errors import (
     FILE_TOO_LARGE,
     INTERNAL_STAGE_ERROR,
     INVALID_EXTENSION,
+    INVALID_SEVERITY_FILTER,
+    MALFORMED_CSV,
     NOT_READY,
     SCHEMA_MISSING_COLUMN,
     SESSION_EXPIRED,
     SESSION_NOT_FOUND,
+    STAGE_PROFILING,
     STAGE_VALIDATING,
     IngestionError,
 )
@@ -42,15 +45,22 @@ from app.schema_validation import run_schema_validation
 from app.schemas import (
     STATE_EXPIRED,
     STATE_FAILED,
+    STATE_PROFILING,
     STATE_VALIDATING,
     ApiErrorModel,
+    DataQualityData,
+    DataQualityResponse,
+    DataQualitySummary,
     EnvelopeMeta,
     ErrorResponse,
+    ProfileResponse,
+    ProfilingArtifact,
     SchemaMappingView,
     SchemaReportData,
     SchemaReportResponse,
     SessionDeletedData,
     SessionDeletedResponse,
+    SessionManifest,
     SessionStatusData,
     SessionStatusResponse,
     UploadAcceptedData,
@@ -288,9 +298,10 @@ async def session_status(session_id: str) -> SessionStatusResponse:
             error=None,
         )
     now_iso = session_store.utcnow_naive_iso()
-    manifest.lastAccessedAt = now_iso
-    manifest.updatedAt = now_iso
-    session_store.write_manifest(paths, manifest)
+    # Sliding-TTL touch that can never regress a concurrent transition:
+    # compare-and-swap (fresh state served on mismatch), terminal FAILED
+    # manifests never rewritten.
+    manifest = session_store.touch_manifest_if_current(paths, manifest, now_iso)
     data = SessionStatusData(
         state=manifest.state,
         stage=manifest.stage,
@@ -395,6 +406,162 @@ async def session_schema(session_id: str) -> SchemaReportResponse:
     )
     return SchemaReportResponse(
         data=data,
+        meta=_base_meta(session_id=session_id, session_state=manifest.state),
+        error=None,
+    )
+
+
+# HTTP status for re-surfaced terminal errors (stored without a status code).
+_TERMINAL_STATUS: dict[str, int] = {
+    SCHEMA_MISSING_COLUMN: 422,
+    MALFORMED_CSV: 422,
+    INTERNAL_STAGE_ERROR: 500,
+}
+
+_SEVERITIES: tuple[str, ...] = ("ERROR", "WARNING", "INFO")
+
+
+def _resolve_session(
+    session_id: str,
+) -> tuple[SessionManifest, session_store.SessionPaths]:
+    """Load a session or raise the contract 404/410 (no work executed)."""
+    if not session_store.is_valid_session_id(session_id):
+        raise IngestionError(
+            SESSION_NOT_FOUND,
+            STAGE_PROFILING,
+            "No upload session matches this identifier.",
+            404,
+            {},
+        )
+    paths = session_store.session_paths(settings.session_root, session_id)
+    manifest = session_store.read_manifest(paths)
+    if manifest is None:
+        raise IngestionError(
+            SESSION_NOT_FOUND,
+            STAGE_PROFILING,
+            "No upload session matches this identifier.",
+            404,
+            {},
+        )
+    if session_store.is_expired(manifest, datetime.now()):
+        session_store.remove_session_tree(paths)
+        logger.info("session_expired")
+        raise IngestionError(
+            SESSION_EXPIRED,
+            STAGE_PROFILING,
+            "This upload session has expired. Upload the file again.",
+            410,
+            {},
+            session_id=session_id,
+            session_state=STATE_EXPIRED,
+        )
+    return manifest, paths
+
+
+def _profiling_artifact_or_raise(
+    session_id: str,
+) -> tuple[SessionManifest, ProfilingArtifact]:
+    """Return the stored profiling artifact for CLEANING+ sessions.
+
+    Purely observational: never executes profiling. Pending sessions get
+    the contract 409 NOT_READY; terminal sessions re-surface their stored
+    error without leaking values.
+    """
+    manifest, paths = _resolve_session(session_id)
+    if manifest.state == STATE_FAILED:
+        stored = manifest.error
+        code = stored.code if stored is not None else INTERNAL_STAGE_ERROR
+        raise IngestionError(
+            code,
+            stored.stage if stored is not None else STAGE_PROFILING,
+            stored.message
+            if stored is not None
+            else "Profiling could not be completed. Upload the file again.",
+            _TERMINAL_STATUS.get(code, 500),
+            dict(stored.details) if stored is not None else {},
+            session_id=session_id,
+            session_state=manifest.state,
+        )
+    if manifest.state in (STATE_VALIDATING, STATE_PROFILING) or (
+        manifest.profileArtifact is None
+    ):
+        raise IngestionError(
+            NOT_READY,
+            STAGE_PROFILING,
+            "Value-level profiling has not completed yet. "
+            "Check the session status and try again shortly.",
+            409,
+            {"state": manifest.state},
+            session_id=session_id,
+            session_state=manifest.state,
+        )
+    artifact = session_store.read_profiling_report(paths)
+    if artifact is None:  # pragma: no cover - written with the transition
+        logger.warning("profiling_artifact_unreadable")
+        raise IngestionError(
+            INTERNAL_STAGE_ERROR,
+            STAGE_PROFILING,
+            "The profiling report could not be read. Upload the file again.",
+            500,
+            {},
+            session_id=session_id,
+            session_state=manifest.state,
+        )
+    return manifest, artifact
+
+
+@router.get("/sessions/{session_id}/profile", response_model=ProfileResponse)
+async def session_profile(session_id: str) -> ProfileResponse:
+    """Return the read-only pre-cleaning profile (contract shape exactly)."""
+    manifest, artifact = _profiling_artifact_or_raise(session_id)
+    return ProfileResponse(
+        data=artifact.profile,
+        meta=_base_meta(session_id=session_id, session_state=manifest.state),
+        error=None,
+    )
+
+
+@router.get("/sessions/{session_id}/data-quality", response_model=DataQualityResponse)
+async def session_data_quality(
+    session_id: str,
+    severity: str | None = None,
+) -> DataQualityResponse:
+    """Return DQ issues by rule, optionally filtered to one severity.
+
+    The summary always describes the full evaluated set; only the issue
+    list is narrowed by `?severity=`. Unknown severity values are rejected
+    (never silently mapped) with 422 INVALID_SEVERITY_FILTER.
+    """
+    manifest, artifact = _profiling_artifact_or_raise(session_id)
+    wanted: str | None = None
+    if severity is not None:
+        normalized = severity.strip().upper()
+        if normalized not in _SEVERITIES:
+            raise IngestionError(
+                INVALID_SEVERITY_FILTER,
+                STAGE_PROFILING,
+                "Unknown severity filter. Use one of: ERROR, WARNING, INFO.",
+                422,
+                {"severity": severity},
+                session_id=session_id,
+                session_state=manifest.state,
+            )
+        wanted = normalized
+    issues = [
+        issue for issue in artifact.issues if wanted is None or issue.severity == wanted
+    ]
+    summary = DataQualitySummary(
+        rulesEvaluated=len(artifact.rulesEvaluated),
+        rulesTriggered=len(artifact.issues),
+        errors=sum(1 for issue in artifact.issues if issue.severity == "ERROR"),
+        warnings=sum(1 for issue in artifact.issues if issue.severity == "WARNING"),
+        infos=sum(1 for issue in artifact.issues if issue.severity == "INFO"),
+        blockingIssues=sum(
+            1 for issue in artifact.issues if issue.blockedStage is not None
+        ),
+    )
+    return DataQualityResponse(
+        data=DataQualityData(summary=summary, issues=issues),
         meta=_base_meta(session_id=session_id, session_state=manifest.state),
         error=None,
     )

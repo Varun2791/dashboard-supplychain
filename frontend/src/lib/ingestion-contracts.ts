@@ -47,3 +47,39 @@ export interface SchemaReportData {
   mapping: SchemaFieldMapping[];
   missingCritical: string[];
 }
+
+/** `GET /sessions/{id}/profile` payload (contract shape; counts only). */
+export interface ProfileData {
+  rows: number;
+  columns: number;
+  grain: string;
+  missingness: unknown[];
+  cardinality: unknown[];
+  duplicates: {
+    exact: number;
+    keyDupes: number;
+  };
+  invarianceConflicts: unknown;
+}
+
+/** One data-quality issue (contract shape; counts only, never values). */
+export interface DataQualityIssue {
+  ruleId: string;
+  severity: string;
+  count: number;
+  treatment: string;
+  blockedStage: string | null;
+}
+
+/** `GET /sessions/{id}/data-quality` payload (contract shape). */
+export interface DataQualityData {
+  summary: {
+    rulesEvaluated: number;
+    rulesTriggered: number;
+    errors: number;
+    warnings: number;
+    infos: number;
+    blockingIssues: number;
+  };
+  issues: DataQualityIssue[];
+}

@@ -121,8 +121,9 @@ def test_validation_completes_without_any_polling(
         session_store.session_paths(session_root, session_id)
     )
     assert manifest is not None
-    assert manifest.state == "PROFILING"
+    assert manifest.state == "CLEANING"
     assert manifest.schemaArtifact is not None
+    assert manifest.profileArtifact is not None
 
 
 def test_get_status_does_not_execute_validation(
@@ -167,9 +168,10 @@ def test_worker_rerun_is_harmless(client: TestClient, session_root: str) -> None
     session_id = upload_ok(client, FIXTURE_BYTES)
     manifest = run_schema_validation(session_id)
     assert manifest is not None
-    assert manifest.state == "PROFILING"
+    assert manifest.state == "CLEANING"
     paths = session_store.session_paths(session_root, session_id)
     assert os.path.isfile(os.path.join(paths.derived, "schema_report.json"))
+    assert os.path.isfile(os.path.join(paths.derived, "profiling_report.json"))
 
 
 def test_recover_validating_sessions_covers_crash_window(
@@ -196,7 +198,7 @@ def test_recover_validating_sessions_covers_crash_window(
     good_manifest = session_store.read_manifest(
         session_store.session_paths(session_root, good)
     )
-    assert good_manifest is not None and good_manifest.state == "PROFILING"
+    assert good_manifest is not None and good_manifest.state == "CLEANING"
     bad_manifest = session_store.read_manifest(
         session_store.session_paths(session_root, bad)
     )
@@ -205,20 +207,25 @@ def test_recover_validating_sessions_covers_crash_window(
     assert os.path.isdir(stale_paths.root)
 
 
-def test_compatible_fixture_advances_to_profiling(
+def test_compatible_fixture_advances_through_profiling_to_cleaning(
     client: TestClient, session_root: str
 ) -> None:
     session_id = upload_ok(client, FIXTURE_BYTES)
     response = client.get(f"/api/v1/sessions/{session_id}/status")
     assert response.status_code == 200
     data = response.json()["data"]
-    assert data["state"] == "PROFILING"
-    assert data["stage"] == "PROFILING"
-    assert data["progress"]["currentStage"] == "PROFILING"
-    assert data["progress"]["completedStages"] == ["UPLOADING", "VALIDATING"]
+    assert data["state"] == "CLEANING"
+    assert data["stage"] == "CLEANING"
+    assert data["progress"]["currentStage"] == "CLEANING"
+    assert data["progress"]["completedStages"] == [
+        "UPLOADING",
+        "VALIDATING",
+        "PROFILING",
+    ]
     assert data["error"] is None
     paths = session_store.session_paths(session_root, session_id)
     assert os.path.isfile(os.path.join(paths.derived, "schema_report.json"))
+    assert os.path.isfile(os.path.join(paths.derived, "profiling_report.json"))
     assert os.path.isfile(paths.raw)  # compatible sessions keep raw
 
 
@@ -277,7 +284,7 @@ def test_extra_column_does_not_reject(client: TestClient, session_root: str) -> 
     lines[2] += ",Silver"
     session_id = upload_ok(client, "\n".join(lines).encode())
     status = client.get(f"/api/v1/sessions/{session_id}/status")
-    assert status.json()["data"]["state"] == "PROFILING"
+    assert status.json()["data"]["state"] == "CLEANING"
     schema = client.get(f"/api/v1/sessions/{session_id}/schema")
     data = schema.json()["data"]
     assert data["missingCritical"] == []
@@ -411,7 +418,7 @@ def test_order_id_repetition_is_not_a_schema_error(
     content = "\n".join([lines[0], lines[1], lines[1]]).encode()
     session_id = upload_ok(client, content)
     status = client.get(f"/api/v1/sessions/{session_id}/status")
-    assert status.json()["data"]["state"] == "PROFILING"
+    assert status.json()["data"]["state"] == "CLEANING"
 
 
 def test_path_like_header_is_unrecognized_and_safe(
@@ -472,14 +479,14 @@ def test_schema_unknown_and_expired_behaviour(
     assert expired.json()["error"]["code"] == "SESSION_EXPIRED"
 
 
-def test_body_with_late_breakage_still_profiles(
+def test_body_with_late_breakage_fails_profiling(
     client: TestClient, session_root: str
 ) -> None:
-    """Header-only proof: body content cannot influence schema recognition.
+    """Mid-file integrity is owned by profiling (DQ-FILE-005).
 
-    A quoting break more than 1 MB into the body would fail any row-scanning
-    validator, yet the session still reaches PROFILING: Phase 5 consumes
-    headers only, and mid-file integrity is owned by profiling (DQ-FILE-005).
+    Header-only validation still parks the session at PROFILING, but the
+    Phase-6 full read rejects the ragged/broken body terminally: FAILED
+    with MALFORMED_CSV and ADR-028 raw/derived removal.
     """
     from app.ingestion import SNIFF_LIMIT_BYTES
 
@@ -489,7 +496,14 @@ def test_body_with_late_breakage_still_profiles(
     assert len(content) > SNIFF_LIMIT_BYTES
     session_id = upload_ok(client, content)
     status = client.get(f"/api/v1/sessions/{session_id}/status")
-    assert status.json()["data"]["state"] == "PROFILING"
+    assert status.status_code == 200
+    data = status.json()["data"]
+    assert data["state"] == "FAILED"
+    assert data["error"]["code"] == "MALFORMED_CSV"
+    assert data["error"]["stage"] == "PROFILING"
+    paths = session_store.session_paths(session_root, session_id)
+    assert not os.path.exists(paths.raw)
+    assert os.listdir(paths.derived) == []
 
 
 def test_garbage_body_still_validates_schema(
@@ -500,7 +514,9 @@ def test_garbage_body_still_validates_schema(
     body = "not-a-date,abc,!!!,,,,,,,,,,,,,,,"
     session_id = upload_ok(client, f"{header}\n{body}\n".encode())
     status = client.get(f"/api/v1/sessions/{session_id}/status")
-    assert status.json()["data"]["state"] == "PROFILING"
+    # Garbage values become parse-failure/flagged DQ findings, never a
+    # schema or profiling failure: the session still settles at CLEANING.
+    assert status.json()["data"]["state"] == "CLEANING"
 
 
 def test_raw_sha_stable_through_validation(

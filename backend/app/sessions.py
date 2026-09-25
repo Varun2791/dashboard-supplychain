@@ -35,10 +35,12 @@ from pydantic import ValidationError
 from app.config import settings
 from app.schemas import (
     FORWARD_STATES,
+    STATE_CLEANING,
     STATE_FAILED,
     STATE_PROFILING,
     STATE_UPLOADING,
     STATE_VALIDATING,
+    ProfilingArtifact,
     SchemaReport,
     SessionManifest,
     SessionProgress,
@@ -52,6 +54,7 @@ PARTIAL_FILENAME = ".upload.part"
 DERIVED_DIRNAME = "derived"
 EXPORTS_DIRNAME = "exports"
 SCHEMA_ARTIFACT_FILENAME = "schema_report.json"
+PROFILING_ARTIFACT_FILENAME = "profiling_report.json"
 
 
 def utcnow_naive_iso() -> str:
@@ -109,12 +112,36 @@ def remove_session_tree(paths: SessionPaths) -> None:
     shutil.rmtree(paths.root, ignore_errors=True)
 
 
+def _unique_tmp_path(final_path: str) -> str:
+    """Collision-free temp sibling for an atomic write.
+
+    Concurrent writers (status touches vs pipeline transitions, possibly in
+    different threads) must never share one fixed ``.tmp`` name: a shared
+    name lets one writer's rename unlink the other's pending temp file and
+    fail its rename with ``FileNotFoundError``. Unique names keep every
+    rename total; last writer wins, readers never see partial content.
+    """
+    return f"{final_path}.{uuid.uuid4().hex}.tmp"
+
+
+def _atomic_write_json(final_path: str, payload: str) -> None:
+    """Write ``payload`` to ``final_path`` atomically via a unique temp file."""
+    tmp_path = _unique_tmp_path(final_path)
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as handle:
+            handle.write(payload)
+        os.replace(tmp_path, final_path)
+    except OSError:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
 def write_manifest(paths: SessionPaths, manifest: SessionManifest) -> None:
     """Persist the manifest atomically: temp file + rename, never partial."""
-    tmp_path = paths.manifest + ".tmp"
-    with open(tmp_path, "w", encoding="utf-8") as handle:
-        handle.write(manifest.model_dump_json())
-    os.replace(tmp_path, paths.manifest)
+    _atomic_write_json(paths.manifest, manifest.model_dump_json())
 
 
 def read_manifest(paths: SessionPaths) -> SessionManifest | None:
@@ -125,6 +152,42 @@ def read_manifest(paths: SessionPaths) -> SessionManifest | None:
         return SessionManifest.model_validate(payload)
     except (OSError, ValueError, ValidationError):
         return None
+
+
+def read_manifest_bytes(paths: SessionPaths) -> bytes | None:
+    """Raw manifest bytes for compare-and-swap touches (None when unreadable)."""
+    try:
+        with open(paths.manifest, "rb") as handle:
+            return handle.read()
+    except OSError:
+        return None
+
+
+def touch_manifest_if_current(
+    paths: SessionPaths, manifest: SessionManifest, now_iso: str
+) -> SessionManifest:
+    """Refresh sliding-TTL timestamps only if the disk still carries `manifest`.
+
+    Status polling must never regress a concurrent pipeline transition (or
+    resurrect a terminal state): the touch writes back only when the stored
+    bytes still equal the manifest that was read. On mismatch (a worker
+    transitioned meanwhile) the fresh stored manifest is returned untouched.
+    Terminal FAILED manifests are never rewritten. Returns the manifest the
+    caller should serve.
+    """
+    if manifest.state == STATE_FAILED:
+        return manifest
+    disk = read_manifest_bytes(paths)
+    if disk is None:
+        return manifest
+    if disk != manifest.model_dump_json().encode("utf-8"):
+        fresh = read_manifest(paths)
+        return fresh if fresh is not None else manifest
+    touched = manifest.model_copy(
+        update={"lastAccessedAt": now_iso, "updatedAt": now_iso}
+    )
+    write_manifest(paths, touched)
+    return touched
 
 
 def make_validating_progress() -> SessionProgress:
@@ -145,8 +208,39 @@ def make_profiling_progress() -> SessionProgress:
         completedStages=[STATE_UPLOADING, STATE_VALIDATING],
         currentStage=STATE_PROFILING,
         remainingStages=[stage for stage in FORWARD_STATES[current_index + 1 :]],
-        note="Profiling is not implemented yet.",
+        note="Profiling is running; results are not available yet.",
     )
+
+
+def make_cleaning_progress() -> SessionProgress:
+    """Truthful Phase-6 progress: PROFILING done, CLEANING current."""
+    current_index = FORWARD_STATES.index(STATE_CLEANING)
+    return SessionProgress(
+        completedStages=[STATE_UPLOADING, STATE_VALIDATING, STATE_PROFILING],
+        currentStage=STATE_CLEANING,
+        remainingStages=[stage for stage in FORWARD_STATES[current_index + 1 :]],
+        note="Cleaning is not implemented yet.",
+    )
+
+
+def profiling_artifact_path(paths: SessionPaths) -> str:
+    """Derived-area location of the profiling report (raw stays untouched)."""
+    return os.path.join(paths.derived, PROFILING_ARTIFACT_FILENAME)
+
+
+def write_profiling_report(paths: SessionPaths, report: ProfilingArtifact) -> None:
+    """Persist the profiling report atomically into `derived/`."""
+    _atomic_write_json(profiling_artifact_path(paths), report.model_dump_json())
+
+
+def read_profiling_report(paths: SessionPaths) -> ProfilingArtifact | None:
+    """Load the profiling report; corrupt/missing input yields None."""
+    try:
+        with open(profiling_artifact_path(paths), encoding="utf-8") as handle:
+            payload = json.load(handle)
+        return ProfilingArtifact.model_validate(payload)
+    except (OSError, ValueError, ValidationError):
+        return None
 
 
 def schema_artifact_path(paths: SessionPaths) -> str:
@@ -156,11 +250,7 @@ def schema_artifact_path(paths: SessionPaths) -> str:
 
 def write_schema_report(paths: SessionPaths, report: SchemaReport) -> None:
     """Persist the schema report atomically into `derived/`."""
-    artifact = schema_artifact_path(paths)
-    tmp_path = artifact + ".tmp"
-    with open(tmp_path, "w", encoding="utf-8") as handle:
-        handle.write(report.model_dump_json())
-    os.replace(tmp_path, artifact)
+    _atomic_write_json(schema_artifact_path(paths), report.model_dump_json())
 
 
 def read_schema_report(paths: SessionPaths) -> SchemaReport | None:

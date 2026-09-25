@@ -234,6 +234,8 @@ def ensure_schema_validated(
     a schema artifact) are returned untouched. Compatible sessions advance
     to PROFILING with the report artifact; incompatible sessions transition
     to FAILED with raw/derived removal and manifest-only error retention.
+    A schema artifact left on disk without its manifest pointer is simply
+    recomputed (bounded header-only read, deterministic same content).
     """
     if manifest.state != STATE_VALIDATING or manifest.schemaArtifact is not None:
         return manifest
@@ -251,37 +253,45 @@ def ensure_schema_validated(
         ) from exc
     if not report.compatible:
         strip_session_payloads(paths)
-        manifest.state = STATE_FAILED
-        manifest.stage = STATE_VALIDATING
         error = _missing_columns_error(report)
-        manifest.error = ApiErrorModel(
-            code=error.code,
-            stage=error.stage,
-            message=error.message,
-            details=error.details,
+        transitioned = manifest.model_copy(
+            update={
+                "state": STATE_FAILED,
+                "stage": STATE_VALIDATING,
+                "error": ApiErrorModel(
+                    code=error.code,
+                    stage=error.stage,
+                    message=error.message,
+                    details=error.details,
+                ),
+                "updatedAt": now_iso,
+                "lastAccessedAt": now_iso,
+            }
         )
-        manifest.updatedAt = now_iso
-        manifest.lastAccessedAt = now_iso
-        session_store.write_manifest(paths, manifest)
+        session_store.write_manifest(paths, transitioned)
         logger.info("schema_validation_failed missing=%d", len(report.missingRequired))
-        return manifest
+        return transitioned
     session_store.write_schema_report(paths, report)
-    manifest.state = STATE_PROFILING
-    manifest.stage = STATE_PROFILING
-    manifest.progress = session_store.make_profiling_progress()
-    manifest.schemaArtifact = os.path.join(
-        session_store.DERIVED_DIRNAME, session_store.SCHEMA_ARTIFACT_FILENAME
+    transitioned = manifest.model_copy(
+        update={
+            "state": STATE_PROFILING,
+            "stage": STATE_PROFILING,
+            "progress": session_store.make_profiling_progress(),
+            "schemaArtifact": os.path.join(
+                session_store.DERIVED_DIRNAME, session_store.SCHEMA_ARTIFACT_FILENAME
+            ),
+            "error": None,
+            "updatedAt": now_iso,
+            "lastAccessedAt": now_iso,
+        }
     )
-    manifest.error = None
-    manifest.updatedAt = now_iso
-    manifest.lastAccessedAt = now_iso
-    session_store.write_manifest(paths, manifest)
+    session_store.write_manifest(paths, transitioned)
     logger.info(
         "schema_validated mapped=%d unrecognized=%d",
         len(report.sourceColumns) - len(report.unrecognized),
         len(report.unrecognized),
     )
-    return manifest
+    return transitioned
 
 
 __all__ = [
@@ -305,9 +315,11 @@ _VALIDATING_IN_PROGRESS: set[str] = set()
 def run_schema_validation(session_id: str) -> SessionManifest | None:
     """Execute one bounded validation for a session (worker body).
 
-    Safe against reset races: a deleted session (no manifest) is a no-op
-    and is never resurrected. Returns the resulting manifest, or None when
-    there was nothing to do.
+    On success the Phase-6 profiling worker is chained inline (same
+    framework-local runner): compatible sessions therefore settle at
+    CLEANING once both steps complete. Safe against reset races: a deleted
+    session (no manifest) is a no-op and is never resurrected. Returns the
+    resulting manifest, or None when there was nothing to do.
     """
     if not session_store.is_valid_session_id(session_id):
         return None
@@ -319,9 +331,17 @@ def run_schema_validation(session_id: str) -> SessionManifest | None:
         manifest = session_store.read_manifest(paths)
         if manifest is None:
             return None
-        return ensure_schema_validated(
+        result = ensure_schema_validated(
             paths, manifest, session_store.utcnow_naive_iso()
         )
+        if result.state == STATE_PROFILING and result.profileArtifact is None:
+            # Local import: profiling owns the reverse dependency
+            # (it reuses the terminal-cleanup helper defined here).
+            from app.profiling import run_profiling
+
+            profiled = run_profiling(session_id)
+            return profiled if profiled is not None else result
+        return result
     finally:
         _VALIDATING_IN_PROGRESS.discard(session_id)
 

@@ -18,6 +18,7 @@ from app.api.sessions import ingestion_error_envelope
 from app.api.sessions import router as sessions_router
 from app.config import settings
 from app.ingestion_errors import IngestionError
+from app.profiling import recover_profiling_sessions
 from app.schema_validation import recover_validating_sessions
 from app.sessions import sweep_sessions
 
@@ -50,12 +51,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Restart recovery: sweep, then re-run validation left VALIDATING.
 
     Covers the crash window between a 202 response and its post-response
-    task (interrupted tasks leave no queue behind by design). Only the
-    bounded Phase-5 step runs here; expired/corrupt trees are swept first,
-    valid resumable sessions are never deleted, later stages never start.
+    task (interrupted tasks leave no queue behind by design). Validation
+    recovery chains into profiling, and a second sweep covers sessions left
+    PROFILING by a restart; expired/corrupt trees are swept first, valid
+    resumable sessions are never deleted, later stages never start.
     """
     sweep_sessions(settings.session_root, datetime.now())
     recover_validating_sessions(settings.session_root)
+    recover_profiling_sessions(settings.session_root)
     yield
 
 

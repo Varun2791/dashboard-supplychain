@@ -108,6 +108,38 @@ def test_status_refreshes_sliding_expiry(client: TestClient, session_root: str) 
     assert after.lastAccessedAt >= before.lastAccessedAt
 
 
+def test_stale_touch_never_regresses_a_transition(session_root: str) -> None:
+    """A status poll that read VALIDATING cannot overwrite PROFILING/FAILED."""
+    session_id = _write_minimal_session(session_root, state="VALIDATING")
+    paths = session_store.session_paths(session_root, session_id)
+    stale = session_store.read_manifest(paths)
+    assert stale is not None
+    # A worker transition lands meanwhile.
+    advanced = session_store.read_manifest(paths)
+    assert advanced is not None
+    advanced.state = "PROFILING"
+    session_store.write_manifest(paths, advanced)
+    served = session_store.touch_manifest_if_current(
+        paths, stale, session_store.utcnow_naive_iso()
+    )
+    assert served.state == "PROFILING"
+    on_disk = session_store.read_manifest(paths)
+    assert on_disk is not None and on_disk.state == "PROFILING"
+
+
+def test_touch_never_rewrites_terminal_failed(session_root: str) -> None:
+    session_id = _write_minimal_session(session_root, state="FAILED")
+    paths = session_store.session_paths(session_root, session_id)
+    before_bytes = session_store.read_manifest_bytes(paths)
+    manifest = session_store.read_manifest(paths)
+    assert manifest is not None and before_bytes is not None
+    served = session_store.touch_manifest_if_current(
+        paths, manifest, "2099-01-01T00:00:00"
+    )
+    assert served.state == "FAILED"
+    assert session_store.read_manifest_bytes(paths) == before_bytes
+
+
 def _write_minimal_session(
     session_root: str,
     *,
@@ -237,5 +269,6 @@ def test_manifest_model_rejects_personal_payload_shape() -> None:
         "lastAccessedAt",
         "error",
         "schemaArtifact",
+        "profileArtifact",
     }
     assert set(SessionManifest.model_fields) == allowed

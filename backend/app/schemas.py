@@ -12,12 +12,13 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-# Accepted lifecycle states (ADR-029). Phase 5 advances VALIDATING sessions
-# to PROFILING on success or FAILED on incompatible schema; later states
-# belong to Phases 6-9.
+# Accepted lifecycle states (ADR-029). Phase 6 advances PROFILING sessions
+# to CLEANING on success or FAILED on an unparseable body; later states
+# belong to Phases 7-9.
 STATE_UPLOADING = "UPLOADING"
 STATE_VALIDATING = "VALIDATING"
 STATE_PROFILING = "PROFILING"
+STATE_CLEANING = "CLEANING"
 STATE_FAILED = "FAILED"
 STATE_EXPIRED = "EXPIRED"
 
@@ -146,6 +147,7 @@ class SessionManifest(BaseModel):
     lastAccessedAt: str
     error: ApiErrorModel | None = None
     schemaArtifact: str | None = None
+    profileArtifact: str | None = None
 
 
 class SchemaFieldMapping(BaseModel):
@@ -224,3 +226,142 @@ class SchemaReportResponse(BaseModel):
     data: SchemaReportData
     meta: EnvelopeMeta
     error: None = None
+
+
+class ProfileMissingness(BaseModel):
+    """Per-field missing-value statistics (counts only, never values)."""
+
+    field: str  # canonical field name
+    source: str  # original source header
+    missing: int
+    total: int
+    rate: float  # 0..1, rounded to 4 dp
+    parseFailures: int  # non-missing values failing governed type parsing
+
+
+class ProfileCardinality(BaseModel):
+    """Per-field distinct-value count (counts only, never value lists)."""
+
+    field: str
+    source: str
+    distinct: int  # distinct non-missing stripped values
+
+
+class ProfileDuplicates(BaseModel):
+    """Duplicate statistics: excess rows beyond first occurrence."""
+
+    exact: int  # fully identical rows across profiled columns
+    keyDupes: int  # rows sharing a duplicate Order Item Id
+
+
+class InvarianceFieldConflicts(BaseModel):
+    """Per-field order-invariance conflict count (orders affected)."""
+
+    field: str
+    conflictingOrders: int
+
+
+class InvarianceConflicts(BaseModel):
+    """Order-grain consistency summary (counts only)."""
+
+    ordersChecked: int
+    conflictingOrders: int
+    byField: list[InvarianceFieldConflicts]
+
+
+class ProfileData(BaseModel):
+    """`GET /sessions/{id}/profile` payload (contract-exact shape).
+
+    `columns` is the number of governed mapped fields assessed; profiling
+    never reads unmapped extras. Carries counts only: no row samples, no
+    cell values, no distinct-value lists, no personal fields.
+    """
+
+    rows: int
+    columns: int
+    grain: str
+    missingness: list[ProfileMissingness]
+    cardinality: list[ProfileCardinality]
+    duplicates: ProfileDuplicates
+    invarianceConflicts: InvarianceConflicts
+
+
+class ProfileResponse(BaseModel):
+    """Success envelope for the profile endpoint."""
+
+    data: ProfileData
+    meta: EnvelopeMeta
+    error: None = None
+
+
+class DataQualityIssue(BaseModel):
+    """One triggered governed DQ rule (contract-exact shape).
+
+    Counts affected rows (or columns for privacy rules, or orders for
+    grain rules — see the rule catalogue notes). Messages name governed
+    fields and counts only, never cell values.
+    """
+
+    ruleId: str
+    severity: str  # ERROR | WARNING | INFO
+    count: int
+    treatment: str  # detected | flagged | excluded | unchanged (never fixed)
+    blockedStage: str | None  # exact downstream stage gated, if any
+
+
+class DataQualitySummary(BaseModel):
+    """Aggregate counts over the evaluated PROFILING-stage rule set."""
+
+    rulesEvaluated: int
+    rulesTriggered: int
+    errors: int
+    warnings: int
+    infos: int
+    blockingIssues: int  # issues with a non-null blockedStage
+
+
+class DataQualityData(BaseModel):
+    """`GET /sessions/{id}/data-quality` payload (contract-exact shape)."""
+
+    summary: DataQualitySummary
+    issues: list[DataQualityIssue]
+
+
+class DataQualityResponse(BaseModel):
+    """Success envelope for the data-quality endpoint."""
+
+    data: DataQualityData
+    meta: EnvelopeMeta
+    error: None = None
+
+
+class RuleContext(BaseModel):
+    """Per-rule audit context kept in the internal artifact only."""
+
+    title: str
+    fields: list[str]
+    grain: str
+    population: str
+
+
+class ProfilingArtifact(BaseModel):
+    """Derived `profiling_report.json`: profile + full DQ findings.
+
+    Internal superset of the two public projections. Stores counts, rule
+    IDs, severities, treatments, blocked stages, safe messages, versions,
+    and timestamps — never row contents, cell values, or personal fields.
+    """
+
+    sessionId: str
+    appVersion: str
+    schemaVersion: int
+    sourceSha256: str
+    sourceRows: int
+    mappedFields: int
+    profile: ProfileData
+    issues: list[DataQualityIssue]
+    issueMessages: dict[str, str]  # ruleId -> safe message
+    ruleContext: dict[str, RuleContext]  # ruleId -> audit context
+    rulesEvaluated: list[str]
+    rulesDeferred: list[str]
+    profiledAt: str

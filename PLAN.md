@@ -248,7 +248,7 @@ Suggested commit: `feat(schema): validate and map DataCo source fields`
 
 ## Phase 6 — Data profiling and quality detection
 
-**Status: NOT STARTED**
+**Status: [~] partially complete (implementation done; reference-file verification pending)**
 
 ### Objective
 
@@ -256,20 +256,22 @@ Produce a trustworthy pre-cleaning profile without modifying data.
 
 ### Tasks
 
-- [ ] Calculate row/column counts, inferred types, missingness, and cardinality.
-- [ ] Detect exact duplicates and key duplicates separately.
-- [ ] Detect conflicting attributes within each order.
-- [ ] Detect numeric range, enum, date, geography, and formula-consistency issues.
-- [ ] Identify constant and fully-null columns.
-- [ ] Identify privacy-sensitive columns.
-- [ ] Display issue severity, affected counts, and proposed treatment.
-- [ ] Ensure profiling can complete within the resource budget.
+- [x] Calculate row/column counts, inferred types, missingness, and cardinality. — `derived/profiling_report.json` + `GET /sessions/{id}/profile` (`rows`, mapped `columns`, per-field `missing`/`rate`/`parseFailures`, `distinct` counts; `backend/app/profile_checks.py`, `backend/app/profiling.py`).
+- [x] Detect exact duplicates and key duplicates separately. — Governed-column `duplicates.exact` (profile stat, no DQ rule owns it; unknown extras never materialize and never affect identity) vs `DQ-KEY-001` excess rows on `Order Item Id`; repeated `Order Id` accepted (`DQ-KEY-002` INFO), `Order Id + Product Id` never a key (`DQ-KEY-003` INFO).
+- [x] Detect conflicting attributes within each order. — `DQ-GRAIN-001` ERROR (blocks CANONICALIZATION) with per-field conflicting-order counts in `invarianceConflicts`; merch/product fields excluded by design; no first-row pick.
+- [x] Detect numeric range, enum, date, geography, and formula-consistency issues. — `DQ-NUM-001/002/003` (incl. ADR-008 `$0.05` tolerance, ADR-017 negative-profit retention), `DQ-CAT-001/002/003/005` (order_status closed 8-set; shipping_mode/customer_segment enforce only source spellings with a verbatim contract instance — "Second Class"/"First Class"/"Corporate" take the governed UNKNOWN path until reference-file confirmation records the exact strings), `DQ-DATE-001/002/003/004` (explicit month-first), `DQ-BUSINESS-002/003` (day-field authority, leakage field audit-only); geography has no governed value rule, so precise-geo/unknown extras are quarantined and counted via `DQ-PRIVACY-001/002` INFO (counts only); `DQ-CAT-004` and `DQ-SCHEMA-004` deferred with recorded reasons (delivery domain / redundant pairings unspecified in governance).
+- [x] Identify constant and fully-null columns. — Covered as profile statistics (zero-distinct / full-missingness fields are visible in `missingness[]`/`cardinality[]`); no invented DQ rule (catalogue has none).
+- [x] Identify privacy-sensitive columns. — `DQ-PRIVACY-001/002` keyword heuristic over headers, INFO, counts only; values never read into reports, logs, or errors.
+- [x] Display issue severity, affected counts, and proposed treatment. — `GET /sessions/{id}/data-quality` (`summary` + contract-exact `issues[{ruleId, severity, count, treatment, blockedStage}]` with `?severity=` filter and `422 INVALID_SEVERITY_FILTER`); upload view shows the profiling/DQ summary (rows, fields, rules run, severity totals, blocking status, next stage = cleaning).
+- [x] Ensure profiling can complete within the resource budget. — Single-pass pandas pyarrow-string staging with governed `usecols` projection per ADR-026/027 (unknown extras never materialize, no chunking); sync workers run threadpooled via Starlette `BackgroundTasks`; unique temp names + CAS manifest touching + artifact adoption close the status-touch/pipeline manifest race found in live smoke testing; 15k-row generated scale test reconciles exactly.
 
 ### Exit criteria
 
-- The unmodified reference file reproduces the audited issue counts.
-- Detection results are independent from cleaning actions.
-- Every issue links to a stable rule identifier.
+- The unmodified reference file reproduces the audited issue counts. — NOT YET EXECUTED. "Audited issue counts" means the Phase-0 audited profiling-level findings (row/grain counts, missingness/duplicates, negative-profit lines, Same-Day pattern, reconciliation evidence in DECISIONS.md), distinct from the global KPI controls owned by Phase 9 ("Complete reference calculations match `AGENTS.md` controls"). Execution needs the public reference file (ADR-024 keeps it out of the repo; no local copy exists) and is therefore pending; no counts have been fabricated. All executable detection logic is reference-ready and verified on synthetic fixtures covering every governed rule.
+- Detection results are independent from cleaning actions. — Satisfied: treatments are never `fixed`; raw SHA-256 verified byte-identical before/after; cleaning artifacts never created (derived holds only `schema_report.json` + `profiling_report.json`).
+- Every issue links to a stable rule identifier. — Satisfied: `test_profiling_rules.py` asserts catalogue parity (severity/treatment/blockedStage/fields/grain/message) for all 19 evaluated rules; 7 deferred rules are listed with reasons in the artifact.
+
+Evidence: `make check` green (frontend 22 tests, backend 145 tests, tsc, ESLint 0 errors, Ruff, mypy strict, `vite build` green), live HTTP smoke test with synthetic `/tmp` data only (clean → CLEANING + reports + stable SHA; issues → CLEANING with travelling ERRORs; malformed body → FAILED/MALFORMED_CSV + ADR-028 cleanup; reset → tree gone + 404; 9-session parallel stress converges), server log error-free.
 
 Suggested commit: `feat(profiling): add dataset and data-quality profiling`
 
