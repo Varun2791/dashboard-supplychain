@@ -47,3 +47,7 @@ Thumbs.db
 !.vscode/extensions.json
 *.swp
 *.swo
+
+# Graft structural-context pilot (ADR-034; local generated state, never committed)
+graft/
+.graft/

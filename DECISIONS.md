@@ -742,6 +742,80 @@ Exports must be retainable and reproducible without leaking personal data or exe
 
 ---
 
+## ADR-034 — Graft structural-context pilot (CLI-only, local)
+
+**Status:** Accepted  
+**Date:** 2026-09-25
+
+### Context
+
+Phases 8+ are increasingly cross-file: canonical construction, the KPI engine, and dashboard views cut across profiling, cleaning, sessions, API schemas, and frontend contracts. Repeated dependency and lifecycle discovery has a real cost, and a structural code graph may reduce it. Graft (`@nanonets/graft`, repo `trailhq/Graft`, MIT) builds a local tree-sitter symbol graph with CLI queries (`ask`, `callers`, `grep`, `map`, `blast`, `skeleton`, `check`). It is a development aid, not part of the product or runtime. It has no dedicated OpenCode integration; its generic `agents` host would inject a marker section into `AGENTS.md`, which is unacceptable for a governance file. Its marketing ("no telemetry") is contradicted by its own `TELEMETRY.md` (anonymous opt-out telemetry), so posture must be set explicitly, not assumed.
+
+### Decision
+
+- Graft is admitted as a **PILOT** only: CLI-only use against committed code, structural/local build only.
+- Install as a machine/developer tool via pinned npx execution, `npx -y @nanonets/graft@0.19.0` (pilot version `0.19.0`, engines `node >= 20`; compatible with the Node 24 pin). A global `npm install -g` was rejected by the machine (root-owned prefix, no sudo per least-privilege); npx is the officially documented no-global alternative and keeps zero persistent install state outside the npm cache. Never an application dependency: nothing in `package.json`, `package-lock.json`, `pyproject.toml`, or `uv.lock`.
+- Telemetry **disabled**: first package fetch ran under `DO_NOT_TRACK=1` (covers the postinstall hook) plus persistent `graft telemetry disable`, verified via `graft telemetry status` (off) and `graft telemetry debug` (nothing queued, sends nothing).
+- **Prohibited in pilot:** `graft init` (any host: `agents`, `claude`, `codex`, all others); any `AGENTS.md`/`GEMINI.md`/rule-file injection; MCP server registration; `graft build --deep` (sends source to a configured LLM provider); Trail Brain (`graft brain push`, cloud); any cloud or source upload.
+- Generated state is local only: `graft/` (nodes, `.graph/`, `.cache/`) and `.graft/` (build config) are gitignored and never committed. `graft build` may append the `graft/` ignore entry itself; the `.gitignore` change is made deliberately and kept minimal. Known tool behavior (v0.19.0): `graft build` also drops an untracked `.ignore` at the repo root to keep `graft/` greppable; the pilot deletes it (generated state stays out of code search and out of the footprint) and re-deletes it if regenerated.
+- Authority: Graft may **LOCATE and EXPLAIN** code relationships. It may **NOT** establish requirements. On any conflict between Graft output and `AGENTS.md`, `PLAN.md`, `DECISIONS.md`, contract docs, or actual source, the authoritative source wins and must be opened directly. Graft output is never cited as justification in decisions, tests, or approvals.
+- Direct-read requirement: Graft output never replaces direct reading of `AGENTS.md`, `PLAN.md`, `DECISIONS.md`, exact API contracts, exact DQ rules/thresholds, exact enum domains, KPI contracts, acceptance criteria, source files being modified, or tests proving modified behavior.
+- Authority hierarchy for any Graft-assisted work: (1) safety/security/privacy; (2) `AGENTS.md`/accepted ADRs/`PLAN.md`/contract docs; (3) correctness/auditability; (4) phase acceptance criteria; (5) tests proving 1–4; (6) reuse/native/stdlib/minimal implementation; (7) cosmetic brevity.
+- Rollback: stop invoking the pinned package, `rm -rf graft/ .graft/`, revert the `.gitignore` entries, optionally `rm -rf ~/.graft/` (rotates telemetry IDs) and clear the npx cache entry, verify `git status` clean. No global package to uninstall under the npx method.
+- Pilot success criteria (measurable): at least two structural findings cross-checked correct against source; observable reduction in discovery reads on cross-file tasks; zero governance drift; zero external transmission (telemetry off, no `--deep`); local state confined to ignored paths. Verdict (`USE` / `CONTINUE PILOT` / `REMOVE`) recorded before permanent adoption; pilot status alone never implies adoption.
+
+### Consequences
+
+- Cross-file discovery (DQ-contract tracing, API/backend/frontend coupling, test impact, lifecycle/recovery code) gets a cheap local aid.
+- A second tool surface (global npm package, local cache dirs) must be maintained, version-pinned in future ADR updates, and kept out of the repo and product.
+- Any future widening (`init` wiring, MCP, `--deep`, Trail Brain) requires a new accepted decision.
+
+### Pilot evidence (2026-09-25)
+
+- Method: pinned `npx -y @nanonets/graft@0.19.0` (global install blocked by root-owned prefix, no sudo); telemetry off via `telemetry disable` + `DO_NOT_TRACK=1`, verified (`telemetry status`: off; `telemetry debug`: nothing queued); structural `graft build` only — 42 files, 478 nodes, 1178 edges, Python + TS/TSX full-fidelity.
+- Smoke: `map`, `skeleton backend/app/cleaning.py`, `callers run_cleaning` / `ensure_cleaned`, `grep CANONICALIZING` (91 hits, symbol-grouped, backend + frontend), depth-2 dependency fan-out of `ensure_cleaned`, `check` in sync. Four findings cross-checked correct against source (profiling→cleaning call edge at `profiling.py:581`, SHA/helper deps of `ensure_cleaned`, its single-caller result, lifecycle function `make_canonicalizing_progress` in `sessions.py`).
+- Limitations found: `callers` missed module-attribute call sites (`cleaning_service.run_cleaning` in tests) — direct search still required for completeness; `graft build` drops an untracked `.ignore` at repo root (deleted per ignore policy, re-delete if regenerated); per-query "tokens saved" reply nudges are inert with telemetry off.
+- Privacy: no `.tmp/`, session, raw-upload, personal-field, or key content in generated state; no `--deep`; no Trail Brain; no MCP.
+- Verdict: CONTINUE PILOT.
+
+---
+
+## ADR-035 — Ponytail minimalism-review pilot (global, lite default)
+
+**Status:** Accepted  
+**Date:** 2026-09-25
+
+### Context
+
+Cleaning (Phase 7) and upcoming canonical/KPI work add defensive code that must stay, alongside a real risk of accidental complexity (duplicated helpers, one-call-site abstractions, redundant DTOs, duplicated tests). Ponytail (project `DietrichGebert/ponytail`, MIT) is a reviewer that pressures reuse and minimal diffs via a per-turn ruleset plus `/ponytail-review` delete-lists. Unlike Graft it documents explicit OpenCode support (plugin + six slash commands). Its standing `full`/`ultra` modes and "YAGNI applies to tests" norm conflict with binding auditability and test requirements, so its intensity must be bounded by governance, not by vendor default.
+
+### Decision
+
+- Ponytail is admitted as a **PILOT** only, from the **official source only**: npm package `@dietrichgebert/ponytail` (pilot version `4.10.0`) loaded as an OpenCode plugin. Third-party mirrors (`opencode-ponytail`, `ponytail-opencode-plugin`, `@metalbolicx/opencode-ponytail`, and similar) are prohibited unless the official project explicitly adopts one.
+- Integration verified against OpenCode `1.18.22`: `{ "plugin": ["@dietrichgebert/ponytail"] }` in the **global/machine-level** config (`~/.config/opencode/opencode.jsonc`), per the official Ponytail README and the OpenCode plugin docs (npm plugins auto-installed via Bun into `~/.cache/opencode/`). No project-repo configuration, no checkout inside the repo.
+- Default mode **`lite`**: build what's asked, name the lazier alternative in one line. `full` only for deliberately scoped review passes. `ultra` is **not permitted** as a standing mode (it challenges requirements, which only the `DECISIONS.md` process may change).
+- **Prohibited:** project `AGENTS.md` edits; `package.json`/`package-lock.json`/`pyproject.toml`/`uv.lock` entries; automatic application of review suggestions; whole-repo rewrites.
+- Authority: Ponytail may **identify avoidable complexity**. It may **NOT** delete or weaken governed behavior: atomic writes, SHA verification, CAS/state guards, restart recovery, concurrency guards, privacy-safe artifacts, `blockedStage` handling, audit logs, negative/adversarial/a11y tests, or anything required by 1–5 below. Deletion recommendations against such behavior are rejected with the ADR cited.
+- Authority hierarchy (binding over any Ponytail suggestion): (1) safety/security/privacy; (2) `AGENTS.md`/accepted ADRs/`PLAN.md`/contract docs; (3) correctness/auditability; (4) phase acceptance criteria; (5) tests required to prove 1–4; (6) reuse/native/stdlib/minimal implementation; (7) cosmetic brevity. Ponytail's ladder operates only within the space 1–5 leave open; explicitly requested docs/prose/tests are exempt from terseness norms.
+- Rollback: remove the plugin entry from global OpenCode config, run the project's `scripts/uninstall.js` equivalent cleanup before deleting any checkout, remove `~/.config/ponytail/`, and manually remove `~/.config/opencode/.ponytail-active` (the OpenCode mode flag, not covered by `uninstall.js` v4.10.0), verify no Ponytail activation in a fresh session. Nothing in the application repo to revert.
+- Pilot success criteria (measurable): review output catches real duplication on the Phase-7 diff without modification; `lite` shows no repeated pressure to remove governed defenses (boundary smoke); zero repository contamination; reversible global state. Verdict (`USE` / `CONTINUE PILOT` / `REMOVE`) recorded before permanent adoption.
+
+### Consequences
+
+- Diff hygiene gets a second reviewer biased toward reuse and small diffs, active only where governance permits.
+- Every Ponytail suggestion must still pass the contract-correctness review and full checks; a suggestion that weakens a governed invariant costs review time rather than saving it — the pilot measures this trade directly.
+- Any widening (standing `full`, `ultra` audits, project-level config) requires a new accepted decision.
+
+### Pilot evidence (2026-09-25)
+
+- Method: official npm `@dietrichgebert/ponytail@4.10.0` as global OpenCode plugin entry in `~/.config/opencode/opencode.jsonc`, verified against OpenCode `1.18.22` plugin docs (npm plugins auto-installed via Bun); default `lite` via `~/.config/ponytail/config.json`, resolved at runtime (`getDefaultMode()` → `lite` from that path). No application-repo files touched.
+- Static verification of the published tarball: all six slash commands ship (`.opencode/command/`); no network calls in hooks/plugin/commands/skills (one docs URL in help text only); no install scripts; the "When NOT to be lazy" safety clause intact (trust-boundary validation, data-loss handling, security, accessibility, explicitly requested work).
+- Live command smoke (`/ponytail`, `/ponytail-review`, Phase-7 review, governed-defense boundary test) is BLOCKED in this environment: headless `opencode run` fails with model insufficient-balance, and no user funds were spent probing further. Deferred until a funded model is available; contract-audit-before-review ordering stands.
+- Rollback gap found: `uninstall.js` v4.10.0 does not remove the OpenCode mode flag `~/.config/opencode/.ponytail-active`; manual removal recorded above.
+- Verdict: CONTINUE PILOT (not USE) pending live smoke.
+
+---
+
 ## Decision-change template
 
 Copy this section when proposing a new material decision:
