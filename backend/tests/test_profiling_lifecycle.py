@@ -311,8 +311,13 @@ def test_concurrent_manifest_writes_never_fail(session_root: str) -> None:
             for _ in range(25):
                 current = session_store.read_manifest(paths)
                 assert current is not None
-                current.lastAccessedAt = session_store.utcnow_naive_iso()
-                session_store.write_manifest(paths, current)
+                # Production status touches use the CAS primitive
+                # (GET /status): a raw full-manifest rewrite would model a
+                # writer production forbids and could regress a transition
+                # the pipeline has already written.
+                session_store.touch_manifest_if_current(
+                    paths, current, session_store.utcnow_naive_iso()
+                )
         except BaseException as exc:  # noqa: BLE001 - collected, then raised
             errors.append(exc)
 
@@ -324,6 +329,8 @@ def test_concurrent_manifest_writes_never_fail(session_root: str) -> None:
         thread.join()
     assert not errors
     assert profiled is not None and profiled.state == "CANONICALIZING"
+    final = session_store.read_manifest(paths)
+    assert final is not None and final.state == "CANONICALIZING"
     assert session_store.read_manifest(paths) is not None
     assert session_store.read_profiling_report(paths) is not None
     assert session_store.read_cleaning_report(paths) is not None
