@@ -133,7 +133,16 @@ function failureFromStatusError(error: ApiErrorPayload | null): Failure {
 
 type Phase = "idle" | "uploading" | "active";
 
-export default function UploadSession() {
+export interface SessionChange {
+  session: UploadAcceptedData | null;
+  sessionState: string | null;
+}
+
+export default function UploadSession({
+  onSessionChange,
+}: {
+  onSessionChange?: (change: SessionChange) => void;
+}) {
   const [selected, setSelected] = useState<File | null>(null);
   const [clientNotice, setClientNotice] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
@@ -149,6 +158,14 @@ export default function UploadSession() {
   const [quality, setQuality] = useState<DataQualityData | null>(null);
   const [cleaning, setCleaning] = useState<CleaningReportData | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Phase-10 shell integration: mirror the global session snapshot without
+  // changing any upload behavior (the callback is optional and side-free).
+  useEffect(() => {
+    if (onSessionChange !== undefined) {
+      onSessionChange({ session, sessionState });
+    }
+  }, [session, sessionState, onSessionChange]);
 
   // Bounded status check: confirm the stored session state, then stop.
   // VALIDATING sessions resolve through schema validation on the server;

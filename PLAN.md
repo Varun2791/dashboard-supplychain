@@ -379,7 +379,7 @@ Suggested commit: `feat(analytics): implement tested supply-chain KPI engine`
 
 ## Phase 10 — Application shell and design system
 
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
 ### Objective
 
@@ -387,19 +387,21 @@ Create a coherent, accessible shell before adding analytical pages.
 
 ### Tasks
 
-- [ ] Configure the approved shadcn/ui components and chart foundation.
-- [ ] Build navigation for Upload, Data Quality, Overview, Delivery, Commercial, and Diagnostics.
-- [ ] Add global dataset/session context.
-- [ ] Add loading, error, empty, and reset states.
-- [ ] Define typography, spacing, color, and chart conventions.
-- [ ] Add accessible filter and KPI-definition patterns.
-- [ ] Verify keyboard navigation and responsive behavior.
+- [x] Configure the approved shadcn/ui components and chart foundation. — shadcn `button` + theme tokens reused as-is; `frontend/src/lib/chart-theme.ts` fixes the Recharts palette/layout/series-shape conventions (no data charts in Phase 10); no new dependency.
+- [x] Build navigation for Upload, Data Quality, Overview, Delivery, Commercial, and Diagnostics. — `AppShell` with state-based routing (no router dependency); future views render honest Phase-11/12/13/14/15 empty states with their product-spec business questions, never fake pages.
+- [x] Add global dataset/session context. — `lib/session.ts` + `SessionProvider`; `UploadSession` mirrors its snapshot via an optional callback with zero behavior change.
+- [x] Add loading, error, empty, and reset states. — `components/states.tsx` primitives (`LoadingState`, `ErrorState`, `EmptyState`); existing upload/reset behavior preserved verbatim.
+- [x] Define typography, spacing, color, and chart conventions. — Existing Geist/Tailwind token system retained; chart conventions codified in `chart-theme.ts` against the governed `--chart-*` tokens.
+- [x] Add accessible filter and KPI-definition patterns. — `components/patterns.tsx`: presentational `FilterSelect` (labelled, clearable) and native-`<details>` `KpiDefinition`; no fetching, filtering, or KPI math.
+- [x] Verify keyboard navigation and responsive behavior. — Native button/select/details semantics with `aria-current` nav; axe-clean shell + future view; real-browser smoke at 1200px and 428px CSS widths with zero page overflow.
 
 ### Exit criteria
 
-- Every state is usable without analytics data.
-- Navigation and controls meet accessibility checks.
-- Components do not contain hardcoded DataCo metrics.
+- [x] Every state is usable without analytics data. — Shell, all six views, and every state/pattern render with no session and no backend data (tested).
+- [x] Navigation and controls meet accessibility checks. — `vitest-axe` on shell + future view; keyboard-focusable nav verified in tests.
+- [x] Components do not contain hardcoded DataCo metrics. — No KPI numbers in shell/views/patterns (test asserts absence of fabricated rate/value patterns); the only reference-file mention remains the pre-existing governed upload copy.
+
+Evidence: `make check` green (backend 275 passed + 1 env-gated skip, untouched; frontend 38 passed — 11 new shell/pattern tests; Ruff, format, mypy strict, tsc, ESLint 0 errors, Prettier, `vite build` green), real-browser smoke via ego-browser against the built bundle (dashboard heading, labelled nav, Delivery stub with Phase-13 copy, zero horizontal overflow at desktop and 428px widths). No backend changes; no KPI fetching or formulas in TypeScript; DQ/Overview/Delivery/Commercial views stay deferred to Phases 11–14.
 
 Suggested commit: `feat(ui): add accessible dashboard shell and design system`
 
