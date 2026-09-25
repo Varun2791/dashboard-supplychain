@@ -22,6 +22,84 @@ const ACCEPTED_202 = {
   error: null,
 };
 
+const STATUS_PROFILING = {
+  data: {
+    state: "PROFILING",
+    stage: "PROFILING",
+    progress: {
+      completedStages: ["UPLOADING", "VALIDATING"],
+      currentStage: "PROFILING",
+      remainingStages: ["CLEANING"],
+      note: "Profiling is not implemented yet.",
+    },
+    startedAt: "2026-09-24T00:00:00",
+    updatedAt: "2026-09-24T00:00:01",
+    error: null,
+  },
+  meta: {
+    appVersion: "0.1.0",
+    schemaVersion: 1,
+    generatedAt: "2026-09-24T00:00:01",
+    sessionId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    sessionState: "PROFILING",
+  },
+  error: null,
+};
+
+const STATUS_FAILED_SCHEMA = {
+  data: {
+    state: "FAILED",
+    stage: "VALIDATING",
+    progress: {
+      completedStages: ["UPLOADING"],
+      currentStage: "VALIDATING",
+      remainingStages: ["PROFILING"],
+      note: "Later processing stages are not implemented yet.",
+    },
+    startedAt: "2026-09-24T00:00:00",
+    updatedAt: "2026-09-24T00:00:01",
+    error: {
+      code: "SCHEMA_MISSING_COLUMN",
+      stage: "VALIDATING",
+      message:
+        "The file is missing 2 required columns: Order Id, Sales. V1 supports DataCo-compatible CSV files: add the missing columns and upload again.",
+      details: {
+        missing: ["Order Id", "Sales"],
+        recognized: 1,
+        columnCount: 3,
+      },
+    },
+  },
+  meta: {
+    appVersion: "0.1.0",
+    schemaVersion: 1,
+    generatedAt: "2026-09-24T00:00:01",
+    sessionId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    sessionState: "FAILED",
+  },
+  error: null,
+};
+
+const SCHEMA_OK = {
+  data: {
+    sourceColumns: ["Order Id", "Sales", "Warehouse Zone"],
+    mapping: [
+      { source: "Order Id", canonical: "order_id", class: "required" },
+      { source: "Sales", canonical: "gross_sales", class: "required" },
+      { source: "Warehouse Zone", canonical: null, class: "unknown" },
+    ],
+    missingCritical: [],
+  },
+  meta: {
+    appVersion: "0.1.0",
+    schemaVersion: 1,
+    generatedAt: "2026-09-24T00:00:02",
+    sessionId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    sessionState: "PROFILING",
+  },
+  error: null,
+};
+
 const STATUS_VALIDATING = {
   data: {
     state: "VALIDATING",
@@ -299,5 +377,144 @@ describe("UploadSession", () => {
     ]) {
       expect(screen.queryByText(term)).not.toBeInTheDocument();
     }
+  });
+
+  it("shows the schema compatibility result for a compatible file", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: unknown) => {
+        const url = String(input);
+        const body = url.endsWith("/schema") ? SCHEMA_OK : STATUS_PROFILING;
+        return Promise.resolve(
+          new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }),
+    );
+    render(<UploadSession />);
+    fireEvent.change(screen.getByTestId("file-input"), {
+      target: { files: [csvFile()] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^upload$/i }));
+    const panel = await screen.findByTestId("schema-panel");
+    expect(panel).toHaveTextContent(/schema check passed/i);
+    expect(panel).toHaveTextContent(/2 of 3 columns mapped/i);
+    expect(panel).toHaveTextContent(/1 extra column ignored/i);
+  });
+
+  it("shows missing columns for an incompatible file", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(JSON.stringify(STATUS_FAILED_SCHEMA), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        ),
+      ),
+    );
+    render(<UploadSession />);
+    fireEvent.change(screen.getByTestId("file-input"), {
+      target: { files: [csvFile()] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^upload$/i }));
+    const panel = await screen.findByTestId("error-panel");
+    expect(panel).toHaveTextContent(/missing 2 required columns/i);
+    expect(panel).toHaveTextContent("Order Id");
+    expect(panel).toHaveTextContent("Sales");
+    expect(panel).toHaveTextContent(/dataco-compatible/i);
+    expect(panel).toHaveTextContent(/SCHEMA_MISSING_COLUMN/);
+  });
+
+  it("treats a pending schema report as retryable, not a failure", async () => {
+    vi.useFakeTimers();
+    let schemaCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: unknown) => {
+        const url = String(input);
+        let body: unknown = STATUS_PROFILING;
+        let status = 200;
+        if (url.endsWith("/schema")) {
+          schemaCalls += 1;
+          if (schemaCalls === 1) {
+            status = 409;
+            body = {
+              data: null,
+              meta: {},
+              error: {
+                code: "NOT_READY",
+                stage: "VALIDATING",
+                message: "Schema validation has not completed yet.",
+                details: { state: "VALIDATING" },
+              },
+            };
+          } else {
+            body = SCHEMA_OK;
+          }
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(body), {
+            status,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }),
+    );
+    render(<UploadSession />);
+    fireEvent.change(screen.getByTestId("file-input"), {
+      target: { files: [csvFile()] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^upload$/i }));
+    await act(async () => {});
+    expect(screen.queryByTestId("error-panel")).not.toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(screen.getByTestId("schema-panel")).toBeInTheDocument();
+    expect(screen.queryByTestId("error-panel")).not.toBeInTheDocument();
+  });
+
+  it("renders hostile header text inertly, never as HTML", async () => {
+    const hostile = "<script>alert(1)</script>";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: unknown) => {
+        const url = String(input);
+        const body = url.endsWith("/schema")
+          ? {
+              data: {
+                sourceColumns: [hostile],
+                mapping: [
+                  { source: hostile, canonical: null, class: "unknown" },
+                ],
+                missingCritical: [],
+              },
+              meta: {},
+              error: null,
+            }
+          : STATUS_PROFILING;
+        return Promise.resolve(
+          new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }),
+    );
+    const { container } = render(<UploadSession />);
+    fireEvent.change(screen.getByTestId("file-input"), {
+      target: { files: [csvFile()] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^upload$/i }));
+    // The schema panel shows counts only, never header strings; the error
+    // path below would render names as text. Either way no script element
+    // may exist and markup must be escaped.
+    await screen.findByTestId("schema-panel");
+    expect(container.querySelector("script")).toBeNull();
+    expect(container.innerHTML).not.toContain("<script>alert");
   });
 });

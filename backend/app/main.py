@@ -1,7 +1,7 @@
-"""FastAPI application (Phase 4: foundation shell + CSV ingestion).
+"""FastAPI application (Phase 5: ingestion + schema validation).
 
-Exposes the session-independent liveness endpoint plus the Phase-4
-upload/status/reset routes from `docs/api-contract.md`. Profiling, cleaning,
+Exposes the liveness endpoint plus the upload/status/reset routes and the
+schema report route from `docs/api-contract.md`. Profiling, cleaning,
 canonicalization, KPI, and export routes belong to later phases and must not
 be added here.
 """
@@ -18,6 +18,7 @@ from app.api.sessions import ingestion_error_envelope
 from app.api.sessions import router as sessions_router
 from app.config import settings
 from app.ingestion_errors import IngestionError
+from app.schema_validation import recover_validating_sessions
 from app.sessions import sweep_sessions
 
 
@@ -46,8 +47,15 @@ class HealthResponse(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Restart sweep: remove corrupt/failed/expired trees, log counts only."""
+    """Restart recovery: sweep, then re-run validation left VALIDATING.
+
+    Covers the crash window between a 202 response and its post-response
+    task (interrupted tasks leave no queue behind by design). Only the
+    bounded Phase-5 step runs here; expired/corrupt trees are swept first,
+    valid resumable sessions are never deleted, later stages never start.
+    """
     sweep_sessions(settings.session_root, datetime.now())
+    recover_validating_sessions(settings.session_root)
     yield
 
 

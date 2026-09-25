@@ -40,6 +40,11 @@ def upload(client: TestClient, content: bytes = b"a,b\n1,2\n") -> Response:
     )
 
 
+COMPATIBLE_BYTES = (
+    Path(__file__).parent / "fixtures" / "v1_reference_synthetic.csv"
+).read_bytes()
+
+
 def backdate_last_access(session_root: str, session_id: str, days_ago: int) -> None:
     paths = session_store.session_paths(session_root, session_id)
     manifest = session_store.read_manifest(paths)
@@ -90,7 +95,7 @@ def test_fresh_session_is_not_expired(client: TestClient, session_root: str) -> 
 
 def test_status_refreshes_sliding_expiry(client: TestClient, session_root: str) -> None:
     """Each status read refreshes lastAccessedAt (sliding TTL)."""
-    session_id = upload(client).json()["data"]["sessionId"]
+    session_id = upload(client, COMPATIBLE_BYTES).json()["data"]["sessionId"]
     paths = session_store.session_paths(session_root, session_id)
     before = session_store.read_manifest(paths)
     assert before is not None
@@ -199,7 +204,7 @@ def test_sweep_handles_missing_root() -> None:
 def test_raw_never_rewritten_by_status_or_polling(
     client: TestClient, session_root: str
 ) -> None:
-    content = b"a,b\n1,2\n3,4\n"
+    content = COMPATIBLE_BYTES
     session_id = upload(client, content).json()["data"]["sessionId"]
     paths = session_store.session_paths(session_root, session_id)
     raw_before = os.stat(paths.raw)
@@ -231,5 +236,6 @@ def test_manifest_model_rejects_personal_payload_shape() -> None:
         "updatedAt",
         "lastAccessedAt",
         "error",
+        "schemaArtifact",
     }
     assert set(SessionManifest.model_fields) == allowed

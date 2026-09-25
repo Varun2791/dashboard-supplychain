@@ -74,4 +74,84 @@ describe("accessibility foundation", () => {
     expect(await screen.findByTestId("error-panel")).toBeInTheDocument();
     expect(await axe(container)).toHaveNoViolations();
   });
+
+  it("reports no axe violations on the schema result state", async () => {
+    vi.stubGlobal("XMLHttpRequest", FakeXMLHttpRequest);
+    FakeXMLHttpRequest.script = {
+      status: 202,
+      body: {
+        data: {
+          sessionId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+          statusUrl: "/api/v1/sessions/x/status",
+          filenameSafe: "orders.csv",
+          bytes: 41,
+          sha256: "ab".repeat(32),
+          encoding: "utf-8",
+        },
+        meta: {},
+        error: null,
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: unknown) => {
+        const url = String(input);
+        const body = url.endsWith("/schema")
+          ? {
+              data: {
+                sourceColumns: ["Order Id", "Sales"],
+                mapping: [
+                  {
+                    source: "Order Id",
+                    canonical: "order_id",
+                    class: "required",
+                  },
+                  {
+                    source: "Sales",
+                    canonical: "gross_sales",
+                    class: "required",
+                  },
+                ],
+                missingCritical: [],
+              },
+              meta: {},
+              error: null,
+            }
+          : {
+              data: {
+                state: "PROFILING",
+                stage: "PROFILING",
+                progress: {
+                  completedStages: ["UPLOADING", "VALIDATING"],
+                  currentStage: "PROFILING",
+                  remainingStages: [],
+                  note: "Profiling is not implemented yet.",
+                },
+                startedAt: "2026-09-24T00:00:00",
+                updatedAt: "2026-09-24T00:00:01",
+                error: null,
+              },
+              meta: {},
+              error: null,
+            };
+        return Promise.resolve(
+          new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }),
+    );
+    const { container } = render(<UploadSession />);
+    fireEvent.change(screen.getByTestId("file-input"), {
+      target: {
+        files: [
+          new File(["order_id\n1\n"], "orders.csv", { type: "text/csv" }),
+        ],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^upload$/i }));
+    expect(await screen.findByTestId("schema-panel")).toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations();
+  });
 });

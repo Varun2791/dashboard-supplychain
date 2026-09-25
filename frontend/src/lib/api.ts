@@ -1,10 +1,16 @@
 import type {
   ApiErrorPayload,
+  SchemaReportData,
   SessionStatusData,
   UploadAcceptedData,
 } from "@/lib/ingestion-contracts";
 
-export type { ApiErrorPayload, SessionStatusData, UploadAcceptedData };
+export type {
+  ApiErrorPayload,
+  SchemaReportData,
+  SessionStatusData,
+  UploadAcceptedData,
+};
 
 /** Relative-first base URL: same-origin in production, Vite proxy in dev. */
 const API_BASE: string =
@@ -16,12 +22,19 @@ const API_BASE: string =
 export class ApiRequestError extends Error {
   readonly status: number;
   readonly code: string | null;
+  readonly details: Record<string, unknown> | null;
 
-  constructor(status: number, message: string, code: string | null = null) {
+  constructor(
+    status: number,
+    message: string,
+    code: string | null = null,
+    details: Record<string, unknown> | null = null,
+  ) {
     super(message);
     this.name = "ApiRequestError";
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -29,13 +42,18 @@ interface ErrorEnvelope {
   error?: {
     code?: string;
     message?: string;
+    details?: Record<string, unknown>;
   } | null;
 }
 
-function envelopeErrorMessage(
+function envelopeError(
   payload: unknown,
   fallback: string,
-): { message: string; code: string | null } {
+): {
+  message: string;
+  code: string | null;
+  details: Record<string, unknown> | null;
+} {
   if (typeof payload === "object" && payload !== null) {
     const envelope = payload as ErrorEnvelope;
     if (envelope.error !== undefined && envelope.error !== null) {
@@ -47,10 +65,15 @@ function envelopeErrorMessage(
             : fallback,
         code:
           typeof envelope.error.code === "string" ? envelope.error.code : null,
+        details:
+          typeof envelope.error.details === "object" &&
+          envelope.error.details !== null
+            ? envelope.error.details
+            : null,
       };
     }
   }
-  return { message: fallback, code: null };
+  return { message: fallback, code: null, details: null };
 }
 
 export interface UploadProgress {
@@ -99,11 +122,11 @@ export function uploadSession(
         reject(new ApiRequestError(xhr.status, "Unexpected upload response."));
         return;
       }
-      const { message, code } = envelopeErrorMessage(
+      const { message, code, details } = envelopeError(
         payload,
         "The upload failed. Please try again.",
       );
-      reject(new ApiRequestError(xhr.status, message, code));
+      reject(new ApiRequestError(xhr.status, message, code, details));
     };
     xhr.onerror = () => {
       reject(
@@ -143,11 +166,11 @@ export async function fetchSessionStatus(
   if (response.ok) {
     return (payload as { data: SessionStatusData }).data;
   }
-  const { message, code } = envelopeErrorMessage(
+  const { message, code, details } = envelopeError(
     payload,
     "Could not read the session status.",
   );
-  throw new ApiRequestError(response.status, message, code);
+  throw new ApiRequestError(response.status, message, code, details);
 }
 
 /** Idempotent reset: delete the whole session tree on the server. */
@@ -173,9 +196,61 @@ export async function deleteSession(sessionId: string): Promise<void> {
   } catch {
     payload = null;
   }
-  const { message, code } = envelopeErrorMessage(
+  const { message, code, details } = envelopeError(
     payload,
     "Could not remove the session.",
   );
-  throw new ApiRequestError(response.status, message, code);
+  throw new ApiRequestError(response.status, message, code, details);
+}
+
+interface SchemaWireMapping {
+  source: string;
+  canonical: string | null;
+  class: string;
+}
+
+interface SchemaWireData {
+  sourceColumns: string[];
+  mapping: SchemaWireMapping[];
+  missingCritical: string[];
+}
+
+/** Read the Phase-5 schema report (contract shape; `class` translated). */
+export async function fetchSchemaReport(
+  sessionId: string,
+): Promise<SchemaReportData> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `${API_BASE}/api/v1/sessions/${encodeURIComponent(sessionId)}/schema`,
+    );
+  } catch {
+    throw new ApiRequestError(
+      0,
+      "Could not reach the local server. Start the backend and try again.",
+    );
+  }
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  if (response.ok) {
+    const data = (payload as { data: SchemaWireData }).data;
+    return {
+      sourceColumns: data.sourceColumns,
+      mapping: data.mapping.map((entry) => ({
+        source: entry.source,
+        canonical: entry.canonical,
+        fieldClass: entry.class,
+      })),
+      missingCritical: data.missingCritical,
+    };
+  }
+  const { message, code, details } = envelopeError(
+    payload,
+    "Could not read the schema report.",
+  );
+  throw new ApiRequestError(response.status, message, code, details);
 }

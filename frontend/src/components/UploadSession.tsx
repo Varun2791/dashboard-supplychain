@@ -3,10 +3,15 @@ import { Button } from "@/components/ui/button";
 import {
   ApiRequestError,
   deleteSession,
+  fetchSchemaReport,
   fetchSessionStatus,
   uploadSession,
 } from "@/lib/api";
-import type { UploadAcceptedData } from "@/lib/api";
+import type {
+  ApiErrorPayload,
+  SchemaReportData,
+  UploadAcceptedData,
+} from "@/lib/api";
 
 const MAX_UPLOAD_MB = 250;
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
@@ -30,6 +35,8 @@ const ERROR_GUIDANCE: Record<string, string> = {
     "Open the file and fix broken quoting, or export it again as CSV.",
   SESSION_NOT_FOUND: "Upload the file again to start a new session.",
   SESSION_EXPIRED: "Upload the file again to start a new session.",
+  SCHEMA_MISSING_COLUMN:
+    "V1 supports DataCo-compatible CSV files. Add the missing columns and upload the file again.",
   INTERNAL_STAGE_ERROR:
     "Try again. If it keeps failing, try a freshly exported CSV file.",
 };
@@ -38,6 +45,30 @@ interface Failure {
   message: string;
   guidance: string | null;
   code: string | null;
+  missing: string[] | null;
+}
+
+function guidanceFor(code: string | null): string | null {
+  if (code !== null && code in ERROR_GUIDANCE) {
+    return ERROR_GUIDANCE[code];
+  }
+  return null;
+}
+
+function missingList(
+  details: Record<string, unknown> | null | undefined,
+): string[] | null {
+  if (details === null || details === undefined) {
+    return null;
+  }
+  const missing: unknown = details["missing"];
+  if (
+    Array.isArray(missing) &&
+    missing.every((name: unknown): name is string => typeof name === "string")
+  ) {
+    return missing;
+  }
+  return null;
 }
 
 function formatBytes(bytes: number): string {
@@ -52,16 +83,35 @@ function formatBytes(bytes: number): string {
 
 function toFailure(error: unknown): Failure {
   if (error instanceof ApiRequestError) {
-    const guidance =
-      error.code !== null && error.code in ERROR_GUIDANCE
-        ? ERROR_GUIDANCE[error.code]
-        : null;
-    return { message: error.message, guidance, code: error.code };
+    return {
+      message: error.message,
+      guidance: guidanceFor(error.code),
+      code: error.code,
+      missing: missingList(error.details),
+    };
   }
   return {
     message: "Something went wrong. Please try again.",
     guidance: null,
     code: null,
+    missing: null,
+  };
+}
+
+function failureFromStatusError(error: ApiErrorPayload | null): Failure {
+  if (error === null) {
+    return {
+      message: "The session failed before schema validation completed.",
+      guidance: null,
+      code: null,
+      missing: null,
+    };
+  }
+  return {
+    message: error.message,
+    guidance: guidanceFor(error.code),
+    code: error.code,
+    missing: missingList(error.details),
   };
 }
 
@@ -78,11 +128,14 @@ export default function UploadSession() {
   const [pollCount, setPollCount] = useState(0);
   const [pollSettled, setPollSettled] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
+  const [schema, setSchema] = useState<SchemaReportData | null>(null);
+  const schemaLoadingRef = useRef(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   // Bounded status check: confirm the stored session state, then stop.
-  // Later processing stages do not exist yet, so polling never continues
-  // indefinitely waiting for them.
+  // VALIDATING sessions resolve through schema validation on the server;
+  // a PROFILING session loads its schema report once, a FAILED session
+  // surfaces its stored error. Polling never waits for later stages.
   useEffect(() => {
     if (phase !== "active" || session === null || pollSettled) {
       return;
@@ -97,6 +150,45 @@ export default function UploadSession() {
         }
         setSessionState(status.state);
         setPollCount(attempt);
+        if (status.state === "FAILED") {
+          setFailure(failureFromStatusError(status.error));
+          setPollSettled(true);
+          return;
+        }
+        if (status.state === "PROFILING") {
+          if (!schemaLoadingRef.current) {
+            schemaLoadingRef.current = true;
+            try {
+              const report = await fetchSchemaReport(session.sessionId);
+              if (cancelled) {
+                return;
+              }
+              setSchema(report);
+              setPollSettled(true);
+            } catch (error) {
+              if (cancelled) {
+                return;
+              }
+              if (
+                error instanceof ApiRequestError &&
+                error.code === "NOT_READY" &&
+                attempt < MAX_STATUS_POLLS
+              ) {
+                // Schema still pending: retry through the poll loop.
+                schemaLoadingRef.current = false;
+                timer = window.setTimeout(() => {
+                  void check(attempt + 1);
+                }, POLL_INTERVAL_MS);
+              } else {
+                setFailure(toFailure(error));
+                setPollSettled(true);
+              }
+            }
+          } else {
+            setPollSettled(true);
+          }
+          return;
+        }
         if (
           !CONTINUING_STATES.has(status.state) ||
           attempt >= MAX_STATUS_POLLS
@@ -158,6 +250,8 @@ export default function UploadSession() {
     setPhase("uploading");
     setProgress(null);
     setFailure(null);
+    setSchema(null);
+    schemaLoadingRef.current = false;
     setSessionState(null);
     setPollCount(0);
     setPollSettled(false);
@@ -192,9 +286,20 @@ export default function UploadSession() {
     setPollCount(0);
     setPollSettled(false);
     setFailure(null);
+    setSchema(null);
+    schemaLoadingRef.current = false;
     setProgress(null);
     setPhase("idle");
   }
+
+  const mappedCount =
+    schema !== null
+      ? schema.mapping.filter((entry) => entry.canonical !== null).length
+      : 0;
+  const unknownCount =
+    schema !== null
+      ? schema.mapping.filter((entry) => entry.fieldClass === "unknown").length
+      : 0;
 
   return (
     <section
@@ -347,6 +452,25 @@ export default function UploadSession() {
               processing stage once it lands.
             </p>
           ) : null}
+          {schema !== null ? (
+            <div
+              data-testid="schema-panel"
+              className="flex flex-col gap-1 text-sm"
+            >
+              <p role="status">
+                Schema check passed: this file matches the V1 DataCo reference
+                mapping.
+              </p>
+              <p>
+                {mappedCount} of {schema.sourceColumns.length} columns mapped to
+                canonical fields
+                {unknownCount > 0
+                  ? `, ${unknownCount} extra column${unknownCount === 1 ? "" : "s"} ignored`
+                  : ""}
+                .
+              </p>
+            </div>
+          ) : null}
           <div>
             <Button
               type="button"
@@ -371,6 +495,16 @@ export default function UploadSession() {
           <p className="font-medium">The file could not be accepted.</p>
           <p>{failure.message}</p>
           {failure.guidance !== null ? <p>{failure.guidance}</p> : null}
+          {failure.missing !== null && failure.missing.length > 0 ? (
+            <>
+              <p>Missing columns:</p>
+              <ul className="list-disc pl-5">
+                {failure.missing.map((name) => (
+                  <li key={name}>{name}</li>
+                ))}
+              </ul>
+            </>
+          ) : null}
           {failure.code !== null ? (
             <p className="text-muted-foreground">Code: {failure.code}</p>
           ) : null}

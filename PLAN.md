@@ -215,7 +215,7 @@ Suggested commit: `feat(ingestion): add validated local csv upload pipeline`
 
 ## Phase 5 — Schema validation and source mapping
 
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
 ### Objective
 
@@ -223,22 +223,24 @@ Recognize the DataCo source schema and map it to stable canonical fields.
 
 ### Tasks
 
-- [ ] Normalize headers without losing original names.
-- [ ] Classify fields as required, optional, redundant, excluded, or unknown.
-- [ ] Validate required IDs, dates, amounts, quantities, and delivery fields.
-- [ ] Map source enums without silently accepting unknown values.
-- [ ] Parse IDs and postal codes as strings.
-- [ ] Parse timestamps with an explicit month-first format.
-- [ ] Produce a schema report before cleaning.
-- [ ] Reject missing critical fields with precise guidance.
-- [ ] Preserve unmapped columns in raw data only.
+- [x] Normalize headers without losing original names. — Registry lookup normalizes BOM/whitespace/case per canonical-schema §9; originals preserved in every report (`test_original_headers_preserved_case_variant_maps`).
+- [x] Classify fields as required, optional, redundant, excluded, or unknown. — `validate_headers` emits the contract classes; redundant (`Order Customer Id`, `Sales per customer`, `Order Profit Per Order`) and audit-only (`Late_delivery_risk` → excluded) from governed names.
+- [x] Validate required IDs, dates, amounts, quantities, and delivery fields. — 18 required entries (DQ-SCHEMA-001 scope); missing any fails the session with `SCHEMA_MISSING_COLUMN` + precise missing list.
+- [x] Map source enums without silently accepting unknown values. — Phase 5 maps headers only; no enum values are interpreted or coerced (garbage-body test proves it).
+- [x] Parse IDs and postal codes as strings. — Deferred by design: recorded as mapping roles; no value parsing occurs in Phase 5 (header-only reads).
+- [x] Parse timestamps with an explicit month-first format. — Recorded as `timestampContracts` metadata (month-first, naive); no timestamp is parsed yet.
+- [x] Produce a schema report before cleaning. — `derived/schema_report.json` + `GET /sessions/{id}/schema` in the exact contract shape (`sourceColumns`, `mapping[{source, canonical, class}]`, `missingCritical`).
+- [x] Reject missing critical fields with precise guidance. — 422 `SCHEMA_MISSING_COLUMN` with `details.missing`; terminal FAILED with ADR-028 raw/derived removal and manifest-only error retention.
+- [x] Preserve unmapped columns in raw data only. — Unknowns quarantined (DQ-SCHEMA-003 INFO); raw immutable; artifact carries header names only, never values.
 
 ### Exit criteria
 
-- DataCo maps deterministically to the canonical contract.
-- Missing or ambiguous critical fields stop analytics.
-- Optional-field absence degrades gracefully.
-- Unknown columns do not alter KPI behavior.
+- [x] DataCo maps deterministically to the canonical contract. — Pure order-independent `validate_headers` + registry pin tests (any rename/retarget/required-flip fails loudly).
+- [x] Missing or ambiguous critical fields stop analytics. — Incompatible sessions reach FAILED, never PROFILING; exact matching admits no ambiguity (duplicates already rejected in Phase 4).
+- [x] Optional-field absence degrades gracefully. — 7 optional dims; absence keeps the session compatible.
+- [x] Unknown columns do not alter KPI behavior. — Extras classified unknown, never mapped, never read (no canonical/KPI code exists yet to consume them).
+
+Evidence: `make check` green (frontend 20 tests, backend 95 tests, tsc, ESLint 0 errors, Ruff, mypy strict), `vite build` green, live HTTP smoke test (compatible → PROFILING + 18/7/1/1/1 classification + SHA-stable raw; incompatible → FAILED + raw removed + 422; extra column → unknown, accepted) with synthetic data only. Exact header strings verified against governed text (ADR-007, canonical-schema §§1/5/6/9); no local DataCo file exists. Execution model: POST returns 202 then schedules bounded validation as a framework-local post-response task (no queues/workers); status/schema endpoints observe only (`/schema` returns contract 409 NOT_READY while pending); startup recovery re-runs validation left VALIDATING by a restart; single-process assumption documented. Bounded deferrals: customer-side geo and exact privacy header strings are unspecified in governance, so such columns surface as unrecognized extras — safety holds by exact-match construction. Pressure-cap note from Phase 4 still stands.
 
 Suggested commit: `feat(schema): validate and map DataCo source fields`
 

@@ -33,3 +33,17 @@ export interface SessionStatusData {
   updatedAt: string;
   error: ApiErrorPayload | null;
 }
+
+/** One contract-exact mapping entry (`class` translated to fieldClass). */
+export interface SchemaFieldMapping {
+  source: string;
+  canonical: string | null;
+  fieldClass: string;
+}
+
+/** `GET /sessions/{id}/schema` payload (contract shape). */
+export interface SchemaReportData {
+  sourceColumns: string[];
+  mapping: SchemaFieldMapping[];
+  missingCritical: string[];
+}

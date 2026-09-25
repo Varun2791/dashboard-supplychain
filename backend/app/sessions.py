@@ -36,8 +36,10 @@ from app.config import settings
 from app.schemas import (
     FORWARD_STATES,
     STATE_FAILED,
+    STATE_PROFILING,
     STATE_UPLOADING,
     STATE_VALIDATING,
+    SchemaReport,
     SessionManifest,
     SessionProgress,
 )
@@ -49,6 +51,7 @@ RAW_FILENAME = "raw.csv"
 PARTIAL_FILENAME = ".upload.part"
 DERIVED_DIRNAME = "derived"
 EXPORTS_DIRNAME = "exports"
+SCHEMA_ARTIFACT_FILENAME = "schema_report.json"
 
 
 def utcnow_naive_iso() -> str:
@@ -133,6 +136,41 @@ def make_validating_progress() -> SessionProgress:
         remainingStages=[stage for stage in FORWARD_STATES[current_index + 1 :]],
         note="Later processing stages are not implemented yet.",
     )
+
+
+def make_profiling_progress() -> SessionProgress:
+    """Truthful Phase-5 progress: VALIDATING done, PROFILING current."""
+    current_index = FORWARD_STATES.index(STATE_PROFILING)
+    return SessionProgress(
+        completedStages=[STATE_UPLOADING, STATE_VALIDATING],
+        currentStage=STATE_PROFILING,
+        remainingStages=[stage for stage in FORWARD_STATES[current_index + 1 :]],
+        note="Profiling is not implemented yet.",
+    )
+
+
+def schema_artifact_path(paths: SessionPaths) -> str:
+    """Derived-area location of the schema report (raw stays untouched)."""
+    return os.path.join(paths.derived, SCHEMA_ARTIFACT_FILENAME)
+
+
+def write_schema_report(paths: SessionPaths, report: SchemaReport) -> None:
+    """Persist the schema report atomically into `derived/`."""
+    artifact = schema_artifact_path(paths)
+    tmp_path = artifact + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as handle:
+        handle.write(report.model_dump_json())
+    os.replace(tmp_path, artifact)
+
+
+def read_schema_report(paths: SessionPaths) -> SchemaReport | None:
+    """Load the schema report; corrupt/missing input yields None."""
+    try:
+        with open(schema_artifact_path(paths), encoding="utf-8") as handle:
+            payload = json.load(handle)
+        return SchemaReport.model_validate(payload)
+    except (OSError, ValueError, ValidationError):
+        return None
 
 
 def build_manifest(

@@ -2,9 +2,9 @@
 
 Local-first web application that turns a DataCo-compatible supply-chain CSV into a dataset profile, a validation and data-quality report, an auditable canonical dataset, correctly-grained KPIs, and an interactive dashboard.
 
-## Status: early foundation (Phase 3)
+## Status: implementation in progress (Phase 5)
 
-The repository currently contains the governance documents, Phase 2 contracts, and the Phase 3 application shell plus the Phase 4 CSV ingestion pipeline (validated upload → immutable raw + manifest → 202/status/reset lifecycle). Profiling, cleaning, canonical models, KPIs, dashboard analytics, and exports are **not implemented yet** — see `PLAN.md` for the phase-gated sequence. There are no screenshots because there is no dashboard yet.
+The repository currently contains the governance documents, Phase 2 contracts, the Phase 3 application shell, the Phase 4 CSV ingestion pipeline (validated upload → immutable raw + manifest → 202/status/reset lifecycle), and Phase 5 V1 DataCo schema validation (header recognition → canonical mapping metadata → VALIDATING-to-PROFILING/FAILED lifecycle with a schema report endpoint). Profiling, cleaning, canonical models, KPIs, dashboard analytics, and exports are **not implemented yet** — see `PLAN.md` for the phase-gated sequence. There are no screenshots because there is no dashboard yet.
 
 ## Local-first / privacy principle
 

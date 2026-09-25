@@ -18,6 +18,10 @@ from app.main import app
 
 VALID_CSV = b"order_id,product_id,quantity\n1,10,2\n2,11,1\n"
 
+COMPATIBLE_BYTES = (
+    Path(__file__).parent / "fixtures" / "v1_reference_synthetic.csv"
+).read_bytes()
+
 
 @pytest.fixture()
 def client() -> TestClient:
@@ -104,12 +108,12 @@ def test_raw_is_byte_identical_hashed_and_read_only(
     client: TestClient, session_root: str
 ) -> None:
     """Immutability: exact bytes, matching SHA-256, read-only raw.csv."""
-    response = post_csv(client, "orders.csv", VALID_CSV)
+    response = post_csv(client, "dataco.csv", COMPATIBLE_BYTES)
     session_id = response.json()["data"]["sessionId"]
     paths = session_store.session_paths(session_root, session_id)
     with open(paths.raw, "rb") as handle:
         stored = handle.read()
-    assert stored == VALID_CSV
+    assert stored == COMPATIBLE_BYTES
     assert hashlib.sha256(stored).hexdigest() == (response.json()["data"]["sha256"])
     mode = os.stat(paths.raw).st_mode
     assert mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH) == 0
@@ -122,7 +126,7 @@ def test_manifest_carries_safe_metadata_only(
     client: TestClient, session_root: str
 ) -> None:
     """Manifest records versions/hash/size/encoding/state, never contents."""
-    response = post_csv(client, "orders.csv", VALID_CSV)
+    response = post_csv(client, "dataco.csv", COMPATIBLE_BYTES)
     session_id = response.json()["data"]["sessionId"]
     manifest = session_store.read_manifest(
         session_store.session_paths(session_root, session_id)
@@ -131,27 +135,44 @@ def test_manifest_carries_safe_metadata_only(
     assert manifest.sessionId == session_id
     assert manifest.appVersion == settings.app_version
     assert manifest.schemaVersion == settings.schema_version
-    assert manifest.bytes == len(VALID_CSV)
-    assert manifest.state == "VALIDATING"
-    assert manifest.stage == "VALIDATING"
+    assert manifest.bytes == len(COMPATIBLE_BYTES)
+    assert manifest.state == "PROFILING"
+    assert manifest.stage == "PROFILING"
     assert manifest.error is None
+    assert manifest.schemaArtifact is not None
     assert manifest.createdAt and manifest.lastAccessedAt
 
 
 def test_status_reports_validating_boundary(
     client: TestClient, session_root: str
 ) -> None:
-    """Status is truthful: VALIDATING with progress, no faked READY."""
-    session_id = post_csv(client, "orders.csv", VALID_CSV).json()["data"]["sessionId"]
-    response = client.get(f"/api/v1/sessions/{session_id}/status")
-    assert response.status_code == 200
-    data = response.json()["data"]
-    assert data["state"] == "VALIDATING"
-    assert data["stage"] == "VALIDATING"
-    assert data["progress"]["currentStage"] == "VALIDATING"
-    assert "READY" not in data["progress"]["completedStages"]
-    assert data["startedAt"] and data["updatedAt"]
-    assert data["error"] is None
+    """Phase-5 truth: incompatible schema fails, compatible reaches PROFILING."""
+    incompatible_id = post_csv(client, "orders.csv", VALID_CSV).json()["data"][
+        "sessionId"
+    ]
+    failed = client.get(f"/api/v1/sessions/{incompatible_id}/status")
+    assert failed.status_code == 200
+    failed_data = failed.json()["data"]
+    assert failed_data["state"] == "FAILED"
+    assert failed_data["stage"] == "VALIDATING"
+    assert failed_data["error"]["code"] == "SCHEMA_MISSING_COLUMN"
+    assert "Order Id" in failed_data["error"]["details"]["missing"]
+    # ADR-028 terminal cleanup: raw gone, manifest-only error retained.
+    incompatible_paths = session_store.session_paths(session_root, incompatible_id)
+    assert not os.path.exists(incompatible_paths.raw)
+
+    compatible_id = post_csv(client, "dataco.csv", COMPATIBLE_BYTES).json()["data"][
+        "sessionId"
+    ]
+    ready = client.get(f"/api/v1/sessions/{compatible_id}/status")
+    assert ready.status_code == 200
+    ready_data = ready.json()["data"]
+    assert ready_data["state"] == "PROFILING"
+    assert ready_data["stage"] == "PROFILING"
+    assert ready_data["progress"]["currentStage"] == "PROFILING"
+    assert "READY" not in ready_data["progress"]["completedStages"]
+    assert ready_data["startedAt"] and ready_data["updatedAt"]
+    assert ready_data["error"] is None
 
 
 def test_reset_is_idempotent_and_removes_tree(

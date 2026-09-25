@@ -19,6 +19,8 @@ DUPLICATE_HEADERS = "DUPLICATE_HEADERS"
 FILE_TOO_LARGE = "FILE_TOO_LARGE"
 UNSUPPORTED_ENCODING = "UNSUPPORTED_ENCODING"
 MALFORMED_CSV = "MALFORMED_CSV"
+NOT_READY = "NOT_READY"
+SCHEMA_MISSING_COLUMN = "SCHEMA_MISSING_COLUMN"
 SESSION_NOT_FOUND = "SESSION_NOT_FOUND"
 SESSION_EXPIRED = "SESSION_EXPIRED"
 INTERNAL_STAGE_ERROR = "INTERNAL_STAGE_ERROR"
@@ -37,6 +39,8 @@ class IngestionError(Exception):
         message: str,
         http_status: int,
         details: dict[str, Any] | None = None,
+        session_id: str | None = None,
+        session_state: str | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
@@ -44,3 +48,5 @@ class IngestionError(Exception):
         self.message = message
         self.http_status = http_status
         self.details = details if details is not None else {}
+        self.session_id = session_id
+        self.session_state = session_state
