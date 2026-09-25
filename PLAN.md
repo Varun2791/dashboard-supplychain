@@ -175,7 +175,7 @@ Suggested commit: `chore: initialize application workspace and quality gates`
 
 ## Phase 4 — CSV ingestion
 
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
 ### Objective
 
@@ -183,27 +183,31 @@ Accept a CSV safely and establish immutable upload metadata.
 
 ### Tasks
 
-- [ ] Implement drag/drop and file-picker upload.
-- [ ] Validate extension, MIME evidence, size, and empty files.
-- [ ] Detect supported encoding, including the DataCo Latin-1 input.
-- [ ] Parse CSV headers before loading the full dataset.
-- [ ] Stream or otherwise bound memory use.
-- [ ] Generate session/upload identifiers.
-- [ ] Preserve the raw file unchanged for the session.
-- [ ] Return stage-specific, actionable errors.
-- [ ] Remove session data on expiry or explicit reset.
+- [x] Implement drag/drop and file-picker upload. — `frontend/src/components/UploadSession.tsx` (+ `UploadSession.test.tsx`: picker, drop, selected-file display).
+- [x] Validate extension, MIME evidence, size, and empty files. — `backend/app/ingestion.py` (`has_csv_extension`, `mime_is_csv_plausible`, `declared_size_exceeds`, `EMPTY_FILE` variants); covered in `test_upload_guards.py`.
+- [x] Detect supported encoding, including the DataCo Latin-1 input. — `detect_encoding` (UTF-8-SIG → Latin-1 + text-plausibility → `UNSUPPORTED_ENCODING`); UTF-8/BOM/Latin-1 success tests.
+- [x] Parse CSV headers before loading the full dataset. — `parse_header` on the ≤1 MB sniff; column cap (200); `check_duplicate_headers` on strip/BOM-drop/casefold normalization; originals preserved.
+- [x] Stream or otherwise bound memory use. — 1 MB chunked `stream_upload_to_temp` with live byte cap + incremental SHA-256 and a fused byte-level emptiness scan; CSV parsing is bounded to the ≤1 MB sniff, so no second full-file pass delays the 202 (ADR-029); per-field cap via `csv.field_size_limit`.
+- [x] Generate session/upload identifiers. — server UUIDv4 (`sessions.new_session_id`); UUID-format gate on status/delete.
+- [x] Preserve the raw file unchanged for the session. — atomic promote to read-only `raw.csv`; byte-identity + SHA test; status/reset never rewrite it.
+- [x] Return stage-specific, actionable errors. — contract envelope + codes (`EMPTY_FILE`, `INVALID_EXTENSION`, `MALFORMED_HEADER`, `UNREADABLE_HEADER`, `DUPLICATE_HEADERS`, `FILE_TOO_LARGE`, `UNSUPPORTED_ENCODING`, `MALFORMED_CSV`, `SESSION_NOT_FOUND`, `SESSION_EXPIRED`, `INTERNAL_STAGE_ERROR`); frontend code→guidance map.
+- [x] Remove session data on expiry or explicit reset. — idempotent `DELETE`; 24 h sliding TTL (410 + tree removal); startup `sweep_sessions` for corrupt/FAILED/expired trees; all deterministic (frozen time, no sleeps).
 
 ### Tests
 
-- [ ] Valid DataCo-shaped CSV.
-- [ ] Empty file, malformed quoting, wrong extension, unsupported encoding, oversized file, duplicate headers, and interrupted upload.
-- [ ] Filename/path traversal attempts.
+- [x] Valid DataCo-shaped CSV. — `test_dataco_shaped_headers_are_not_schema_gated` (synthetic bytes; no DataCo file in repo).
+- [x] Empty file, malformed quoting, wrong extension, unsupported encoding, oversized file, duplicate headers, and interrupted upload. — `test_upload_guards.py` matrix; 250 MB boundary via small-limit unit test on the streaming writer (no 250 MB fixture). Sniff-bounded rule: breakage within the first 1 MB fails synchronously; breakage beyond it is accepted at POST and owned by profiling (DQ-FILE-005) — covered by an explicit boundary test.
+- [x] Filename/path traversal attempts. — traversal-name uploads collapse to a safe leaf inside the UUID tree; encoded IDs rejected as unknown.
 
 ### Exit criteria
 
-- Valid upload reaches profiling without mutation.
-- Invalid uploads fail safely without orphaned data.
-- Uploaded data remains local.
+- [x] Valid upload reaches profiling without mutation. — 202 stores immutable raw and parks the session at VALIDATING; downstream stages intentionally not started (truthful progress, no faked READY).
+- [x] Invalid uploads fail safely without orphaned data. — every guard failure removes the session tree (asserted per failure test).
+- [x] Uploaded data remains local. — relative `/api` calls (+ Vite dev proxy), no external transmission; logs carry IDs/counts/codes only.
+
+Evidence: `make check` green (frontend 15 tests, backend 56 tests, tsc, ESLint 0 errors, Ruff, mypy strict), `vite build` green, live HTTP smoke test (health → 202 → status VALIDATING → hash-verified raw → DELETE → 410/400 rejections) with synthetic `/tmp` data only.
+
+Bounded/deferred (not invented in Phase 4): on-disk pressure caps (session count/total bytes) appear in architecture only as examples with no Phase-3 config values, so no new defaults were added — TTL + sweep are implemented; caps await a future ADR if Phase 17 requires them.
 
 Suggested commit: `feat(ingestion): add validated local csv upload pipeline`
 

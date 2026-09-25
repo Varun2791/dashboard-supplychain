@@ -4,7 +4,7 @@ Local-first web application that turns a DataCo-compatible supply-chain CSV into
 
 ## Status: early foundation (Phase 3)
 
-The repository currently contains the governance documents, Phase 2 contracts, and an empty application shell (backend health endpoint + frontend placeholder view). Upload, profiling, cleaning, canonical models, KPIs, dashboard analytics, and exports are **not implemented yet** — see `PLAN.md` for the phase-gated sequence. There are no screenshots because there is no dashboard yet.
+The repository currently contains the governance documents, Phase 2 contracts, and the Phase 3 application shell plus the Phase 4 CSV ingestion pipeline (validated upload → immutable raw + manifest → 202/status/reset lifecycle). Profiling, cleaning, canonical models, KPIs, dashboard analytics, and exports are **not implemented yet** — see `PLAN.md` for the phase-gated sequence. There are no screenshots because there is no dashboard yet.
 
 ## Local-first / privacy principle
 

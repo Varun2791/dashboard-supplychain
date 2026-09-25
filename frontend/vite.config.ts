@@ -11,6 +11,13 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  server: {
+    // Local-first dev: forward same-origin /api calls to the backend so the
+    // frontend never hardcodes a host or port.
+    proxy: {
+      "/api": "http://127.0.0.1:8000",
+    },
+  },
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],

@@ -2,9 +2,10 @@
 
 Vite + React + TypeScript (strict) + shadcn/ui + Tailwind CSS + Recharts.
 
-This workspace currently contains only the minimum shell: a placeholder
-view, one shadcn component (`button`), and the test/lint/type infrastructure
-(Vitest, React Testing Library, vitest-axe, ESLint, Prettier).
+This workspace currently contains the upload view (drag/drop + file picker
+against the Phase-4 session API), one shadcn component (`button`), and the
+test/lint/type infrastructure (Vitest, React Testing Library, vitest-axe,
+ESLint, Prettier).
 
 Dashboard views, KPI components, and charts belong to later phases
 (see the root `PLAN.md`) and must not be added here.

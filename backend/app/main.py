@@ -1,14 +1,24 @@
-"""FastAPI application (Phase 3 foundation shell).
+"""FastAPI application (Phase 4: foundation shell + CSV ingestion).
 
-Exposes only the session-independent liveness endpoint from
-`docs/api-contract.md`. Upload, profiling, cleaning, canonicalization,
-KPI, and export routes belong to later phases and must not be added here.
+Exposes the session-independent liveness endpoint plus the Phase-4
+upload/status/reset routes from `docs/api-contract.md`. Profiling, cleaning,
+canonicalization, KPI, and export routes belong to later phases and must not
+be added here.
 """
 
-from fastapi import FastAPI
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from datetime import datetime
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from app.api.sessions import ingestion_error_envelope
+from app.api.sessions import router as sessions_router
 from app.config import settings
+from app.ingestion_errors import IngestionError
+from app.sessions import sweep_sessions
 
 
 class HealthData(BaseModel):
@@ -34,7 +44,24 @@ class HealthResponse(BaseModel):
     error: None = None
 
 
-app = FastAPI(title="Supply Chain Analytics API")
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Restart sweep: remove corrupt/failed/expired trees, log counts only."""
+    sweep_sessions(settings.session_root, datetime.now())
+    yield
+
+
+app = FastAPI(title="Supply Chain Analytics API", lifespan=lifespan)
+app.include_router(sessions_router)
+
+
+@app.exception_handler(IngestionError)
+async def ingestion_error_handler(
+    request: Request, exc: IngestionError
+) -> JSONResponse:
+    """Render domain failures as the contract error envelope."""
+    envelope = ingestion_error_envelope(exc)
+    return JSONResponse(status_code=exc.http_status, content=envelope.model_dump())
 
 
 @app.get("/api/v1/health", response_model=HealthResponse)

@@ -1,21 +1,23 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import App from "./App";
 
 describe("App shell", () => {
-  it("renders the dashboard heading", () => {
+  it("renders the dashboard heading and the upload view", () => {
     render(<App />);
     expect(
       screen.getByRole("heading", {
         name: /supply chain analytics dashboard/i,
       }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /upload a supply-chain csv/i }),
+    ).toBeInTheDocument();
   });
 
-  it("reveals the stack-check status after activation", () => {
+  it("states local-only processing and the upload cap", () => {
     render(<App />);
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /run stack check/i }));
-    expect(screen.getByRole("status")).toHaveTextContent(/stack check passed/i);
+    expect(screen.getByText(/only on this machine/i)).toBeInTheDocument();
+    expect(screen.getByText(/maximum 250 mb/i)).toBeInTheDocument();
   });
 });
