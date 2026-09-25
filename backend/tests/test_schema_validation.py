@@ -121,11 +121,12 @@ def test_validation_completes_without_any_polling(
         session_store.session_paths(session_root, session_id)
     )
     assert manifest is not None
-    assert manifest.state == "ANALYZING"
+    assert manifest.state == "READY"
     assert manifest.schemaArtifact is not None
     assert manifest.profileArtifact is not None
     assert manifest.cleaningArtifact is not None
     assert manifest.canonicalArtifact is not None
+    assert manifest.kpiArtifact is not None
 
 
 def test_get_status_does_not_execute_validation(
@@ -170,7 +171,7 @@ def test_worker_rerun_is_harmless(client: TestClient, session_root: str) -> None
     session_id = upload_ok(client, FIXTURE_BYTES)
     manifest = run_schema_validation(session_id)
     assert manifest is not None
-    assert manifest.state == "ANALYZING"
+    assert manifest.state == "READY"
     paths = session_store.session_paths(session_root, session_id)
     assert os.path.isfile(os.path.join(paths.derived, "schema_report.json"))
     assert os.path.isfile(os.path.join(paths.derived, "profiling_report.json"))
@@ -181,8 +182,8 @@ def test_worker_rerun_is_harmless(client: TestClient, session_root: str) -> None
 def test_recover_validating_sessions_covers_crash_window(
     client: TestClient, session_root: str
 ) -> None:
-    """Startup recovery chains validation into profiling, cleaning, and
-    canonicalization."""
+    """Startup recovery chains validation into profiling, cleaning,
+    canonicalization, and KPI analysis."""
     from datetime import datetime, timedelta
 
     os.makedirs(session_root, exist_ok=True)
@@ -203,7 +204,7 @@ def test_recover_validating_sessions_covers_crash_window(
     good_manifest = session_store.read_manifest(
         session_store.session_paths(session_root, good)
     )
-    assert good_manifest is not None and good_manifest.state == "ANALYZING"
+    assert good_manifest is not None and good_manifest.state == "READY"
     bad_manifest = session_store.read_manifest(
         session_store.session_paths(session_root, bad)
     )
@@ -212,22 +213,23 @@ def test_recover_validating_sessions_covers_crash_window(
     assert os.path.isdir(stale_paths.root)
 
 
-def test_compatible_fixture_advances_through_cleaning_to_analyzing(
+def test_compatible_fixture_advances_through_cleaning_to_ready(
     client: TestClient, session_root: str
 ) -> None:
     session_id = upload_ok(client, FIXTURE_BYTES)
     response = client.get(f"/api/v1/sessions/{session_id}/status")
     assert response.status_code == 200
     data = response.json()["data"]
-    assert data["state"] == "ANALYZING"
-    assert data["stage"] == "ANALYZING"
-    assert data["progress"]["currentStage"] == "ANALYZING"
+    assert data["state"] == "READY"
+    assert data["stage"] == "READY"
+    assert data["progress"]["currentStage"] == "READY"
     assert data["progress"]["completedStages"] == [
         "UPLOADING",
         "VALIDATING",
         "PROFILING",
         "CLEANING",
         "CANONICALIZING",
+        "ANALYZING",
     ]
     assert data["error"] is None
     paths = session_store.session_paths(session_root, session_id)
@@ -296,7 +298,7 @@ def test_extra_column_does_not_reject(client: TestClient, session_root: str) -> 
     lines[2] += ",Silver"
     session_id = upload_ok(client, "\n".join(lines).encode())
     status = client.get(f"/api/v1/sessions/{session_id}/status")
-    assert status.json()["data"]["state"] == "ANALYZING"
+    assert status.json()["data"]["state"] == "READY"
     schema = client.get(f"/api/v1/sessions/{session_id}/schema")
     data = schema.json()["data"]
     assert data["missingCritical"] == []

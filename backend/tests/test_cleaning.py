@@ -4,7 +4,8 @@ Covers: the CAT-005 trim matrix (positive + edge cases), the
 no-unauthorized-cleaning battery (duplicates, missing values, numerics,
 dates, delivery/leakage, unknown enums, unknown columns), audit-count
 reconciliation, idempotence/determinism, privacy exclusion, lifecycle
-(CLEANING -> CANONICALIZING -> ANALYZING, observational GETs, 409/404/410,
+(CLEANING -> CANONICALIZING -> ANALYZING -> READY, observational GETs,
+409/404/410,
 ADR-028 failure, restart recovery, torn adoption, reset, duplicate guard),
 stage-blocking travel, and a generated scale check. No real DataCo file is
 used anywhere.
@@ -262,13 +263,11 @@ def test_only_governed_label_fields_are_trimmed() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_trim_fixture_settles_at_analyzing(
-    client: TestClient, session_root: str
-) -> None:
+def test_trim_fixture_settles_at_ready(client: TestClient, session_root: str) -> None:
     session_id, accepted = upload_ok(client, TRIM_BYTES)
     data = client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]
-    assert data["state"] == "ANALYZING"
-    assert data["stage"] == "ANALYZING"
+    assert data["state"] == "READY"
+    assert data["stage"] == "READY"
     assert data["error"] is None
     paths = session_store.session_paths(session_root, session_id)
     assert sorted(os.listdir(paths.derived)) == [
@@ -281,6 +280,7 @@ def test_trim_fixture_settles_at_analyzing(
         "canonical_report.json",
         "cleaned.csv",
         "cleaning_report.json",
+        "kpi_report.json",
         "profiling_report.json",
         "schema_report.json",
     ]
@@ -463,7 +463,7 @@ def test_rerun_is_byte_identical(client: TestClient, session_root: str) -> None:
         before = handle.read()
     first = session_store.read_cleaning_report(paths)
     rerun = cleaning_service.run_cleaning(session_id)
-    assert rerun is not None and rerun.state == "ANALYZING"
+    assert rerun is not None and rerun.state == "READY"
     with open(os.path.join(paths.derived, "cleaned.csv"), "rb") as handle:
         assert handle.read() == before
     second = session_store.read_cleaning_report(paths)
@@ -500,7 +500,7 @@ def test_torn_transition_adopts_identical_result(
     manifest.cleaningArtifact = None
     session_store.write_manifest(paths, manifest)
     adopted = cleaning_service.run_cleaning(session_id)
-    assert adopted is not None and adopted.state == "ANALYZING"
+    assert adopted is not None and adopted.state == "READY"
     assert adopted.cleaningArtifact is not None
     with open(os.path.join(paths.derived, "cleaned.csv"), "rb") as handle:
         assert handle.read() == before
@@ -534,7 +534,7 @@ def test_privacy_probes_never_enter_derived_outputs(
         session_id, _ = upload_ok(client, content)
     assert (
         client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
-        == "ANALYZING"
+        == "READY"
     )
     paths = session_store.session_paths(session_root, session_id)
     with open(os.path.join(paths.derived, "cleaning_report.json"), "rb") as handle:
@@ -679,7 +679,7 @@ def test_recover_cleaning_sessions_covers_crash_window(session_root: str) -> Non
     good_manifest = session_store.read_manifest(
         session_store.session_paths(session_root, good)
     )
-    assert good_manifest is not None and good_manifest.state == "ANALYZING"
+    assert good_manifest is not None and good_manifest.state == "READY"
     assert os.path.isdir(stale_paths.root)
 
 
@@ -690,7 +690,7 @@ def test_duplicate_worker_invocation_is_safe(
     first = cleaning_service.run_cleaning(session_id)
     second = cleaning_service.run_cleaning(session_id)
     assert first is not None and second is not None
-    assert first.state == second.state == "ANALYZING"
+    assert first.state == second.state == "READY"
     cleaning_service._CLEANING_IN_PROGRESS.add(session_id)
     try:
         assert cleaning_service.run_cleaning(session_id) is None
@@ -724,7 +724,7 @@ def test_artifact_write_failure_leaves_safe_rerunnable_state(
     assert stalled.cleaningArtifact is None
     monkeypatch.setattr(session_store, "write_cleaning_report", real_write_report)
     recovered = cleaning_service.run_cleaning(session_id)
-    assert recovered is not None and recovered.state == "ANALYZING"
+    assert recovered is not None and recovered.state == "READY"
 
 
 def test_foreign_artifact_is_recomputed_not_adopted(session_root: str) -> None:
@@ -818,14 +818,14 @@ def test_latin1_source_cleans_deterministically(
     session_id, _ = upload_ok(client, content)
     assert (
         client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
-        == "ANALYZING"
+        == "READY"
     )
     paths = session_store.session_paths(session_root, session_id)
     with open(os.path.join(paths.derived, "cleaned.csv"), "rb") as handle:
         before = handle.read()
     assert "SYN-Café".encode() in before
     rerun = cleaning_service.run_cleaning(session_id)
-    assert rerun is not None and rerun.state == "ANALYZING"
+    assert rerun is not None and rerun.state == "READY"
     with open(os.path.join(paths.derived, "cleaned.csv"), "rb") as handle:
         assert handle.read() == before
 
@@ -844,7 +844,7 @@ def test_corrupt_cleaned_csv_is_recomputed_not_adopted(session_root: str) -> Non
     manifest.cleaningArtifact = None
     session_store.write_manifest(paths, manifest)
     recomputed = cleaning_service.run_cleaning(session_id)
-    assert recomputed is not None and recomputed.state == "ANALYZING"
+    assert recomputed is not None and recomputed.state == "READY"
     cleaned = pd.read_csv(
         session_store.cleaned_path(paths),
         dtype="string[pyarrow]",
@@ -870,7 +870,7 @@ def test_unreadable_report_with_pointer_returns_stored_state(
     ) as handle:
         handle.write("{not valid json")
     result = cleaning_service.run_cleaning(session_id)
-    assert result is not None and result.state == "ANALYZING"
+    assert result is not None and result.state == "READY"
     assert result.cleaningArtifact is not None
 
 
@@ -911,7 +911,7 @@ def test_generated_scale_reconciles(client: TestClient, session_root: str) -> No
     session_id, _ = upload_ok(client, content)
     assert (
         client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
-        == "ANALYZING"
+        == "READY"
     )
     paths = session_store.session_paths(session_root, session_id)
     artifact = session_store.read_cleaning_report(paths)

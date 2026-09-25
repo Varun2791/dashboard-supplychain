@@ -106,12 +106,12 @@ def read_artifact(session_root: str, session_id: str) -> dict:
         return json.load(handle)
 
 
-def test_clean_fixture_settles_at_analyzing_with_only_privacy_info(
+def test_clean_fixture_settles_at_ready_with_only_privacy_info(
     client: TestClient, session_root: str
 ) -> None:
     session_id = upload_ok(client, CLEAN_BYTES)
     status = client.get(f"/api/v1/sessions/{session_id}/status")
-    assert status.json()["data"]["state"] == "ANALYZING"
+    assert status.json()["data"]["state"] == "READY"
     quality = client.get(f"/api/v1/sessions/{session_id}/data-quality")
     assert quality.status_code == 200
     issues = quality.json()["data"]["issues"]
@@ -249,7 +249,7 @@ def test_repeated_order_id_is_legitimate_but_dup_item_id_is_not(
     )
     session_id = upload_ok(client, craft_csv([first, second]))
     status = client.get(f"/api/v1/sessions/{session_id}/status")
-    assert status.json()["data"]["state"] == "ANALYZING"
+    assert status.json()["data"]["state"] == "READY"
     quality = client.get(f"/api/v1/sessions/{session_id}/data-quality").json()["data"]
     by_rule = {issue["ruleId"]: issue for issue in quality["issues"]}
     assert "DQ-KEY-001" not in by_rule
@@ -402,7 +402,7 @@ def test_latin1_encoding_profiles(client: TestClient, session_root: str) -> None
         pass
     session_id = upload_ok(client, content)
     status = client.get(f"/api/v1/sessions/{session_id}/status")
-    assert status.json()["data"]["state"] == "ANALYZING"
+    assert status.json()["data"]["state"] == "READY"
     profile = client.get(f"/api/v1/sessions/{session_id}/profile").json()["data"]
     assert profile["rows"] == 1
 
@@ -443,7 +443,7 @@ def test_inversion_derived_spellings_take_unknown_path(
     session_id = upload_ok(client, (header + "\n" + "\n".join(rows) + "\n").encode())
     assert (
         client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
-        == "ANALYZING"
+        == "READY"
     )
     quality = client.get(f"/api/v1/sessions/{session_id}/data-quality").json()["data"]
     by_rule = {issue["ruleId"]: issue for issue in quality["issues"]}
@@ -519,7 +519,7 @@ def test_grain003_identical_dims_do_not_conflict(
     session_id = upload_ok(client, dim_csv(rows))
     assert (
         client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
-        == "ANALYZING"
+        == "READY"
     )
     assert "DQ-GRAIN-003" not in dim_quality(client, session_id)
 
@@ -592,7 +592,7 @@ def test_grain003_missing_vs_value_is_not_a_conflict(
     session_id = upload_ok(client, dim_csv(rows))
     assert (
         client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
-        == "ANALYZING"
+        == "READY"
     )
     assert "DQ-GRAIN-003" not in dim_quality(client, session_id)
 
@@ -614,7 +614,7 @@ def test_grain003_unit_price_variation_is_not_a_conflict(
     session_id = upload_ok(client, dim_csv(rows))
     assert (
         client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
-        == "ANALYZING"
+        == "READY"
     )
     assert "DQ-GRAIN-003" not in dim_quality(client, session_id)
 
@@ -633,7 +633,7 @@ def test_grain003_padding_only_difference_is_cat005_not_conflict(
     session_id = upload_ok(client, dim_csv(rows))
     assert (
         client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
-        == "ANALYZING"
+        == "READY"
     )
     by_rule = dim_quality(client, session_id)
     assert "DQ-GRAIN-003" not in by_rule
@@ -650,7 +650,7 @@ def test_grain004_same_segment_does_not_conflict(
     session_id = upload_ok(client, dim_csv(rows))
     assert (
         client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
-        == "ANALYZING"
+        == "READY"
     )
     assert "DQ-GRAIN-004" not in dim_quality(client, session_id)
 
@@ -696,7 +696,7 @@ def test_grain004_missing_vs_value_is_not_a_conflict(
     session_id = upload_ok(client, dim_csv(rows))
     assert (
         client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
-        == "ANALYZING"
+        == "READY"
     )
     assert "DQ-GRAIN-004" not in dim_quality(client, session_id)
 

@@ -31,9 +31,10 @@ const CONTINUING_STATES = new Set([
   "CLEANING",
   "CANONICALIZING",
 ]);
-/** Settled states: ANALYZING (canonical tables built) or CANONICALIZING
- * parked behind a governed quality gate (reports still readable). */
-const SETTLED_STATES = new Set(["ANALYZING", "CANONICALIZING"]);
+/** Settled states: READY (KPI analysis complete), ANALYZING (canonical
+ * tables built, analysis still running), or CANONICALIZING parked behind a
+ * governed quality gate (reports still readable). */
+const SETTLED_STATES = new Set(["ANALYZING", "CANONICALIZING", "READY"]);
 
 const ERROR_GUIDANCE: Record<string, string> = {
   EMPTY_FILE:
@@ -151,9 +152,10 @@ export default function UploadSession() {
 
   // Bounded status check: confirm the stored session state, then stop.
   // VALIDATING sessions resolve through schema validation on the server;
-  // an ANALYZING session (or a CANONICALIZING session parked behind a
-  // governed quality gate) loads its schema, profile, data-quality, and
-  // cleaning reports once each, a FAILED session surfaces its stored error.
+  // a READY session (or an ANALYZING session with analysis still running,
+  // or a CANONICALIZING session parked behind a governed quality gate)
+  // loads its schema, profile, data-quality, and cleaning reports once
+  // each, a FAILED session surfaces its stored error.
   // Polling never waits for later stages.
   useEffect(() => {
     if (phase !== "active" || session === null || pollSettled) {
@@ -498,9 +500,11 @@ export default function UploadSession() {
             >
               Profiling and audited cleaning are complete. Only the governed
               whitespace trim ran; anything else stayed as uploaded.
-              {sessionState === "ANALYZING"
-                ? " Canonical tables are built; KPI analytics are not available in this build yet."
-                : " Canonicalization is gated (see below); KPI analytics are not available in this build yet."}
+              {sessionState === "READY"
+                ? " KPI analysis is complete; headline results are ready for the dashboard views."
+                : sessionState === "ANALYZING"
+                  ? " Canonical tables are built; KPI analytics are not available in this build yet."
+                  : " Canonicalization is gated (see below); KPI analytics are not available in this build yet."}
             </p>
           ) : null}
           {schema !== null ? (

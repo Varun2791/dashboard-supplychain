@@ -18,13 +18,15 @@ from pydantic import BaseModel, Field
 # performing canonicalization) or FAILED on terminal cleaning failure.
 # Phase 8 advances CANONICALIZING sessions to ANALYZING on success (parking
 # there without performing KPI analysis) while governed quality blocks keep
-# the session parked at CANONICALIZING. READY belongs to Phase 9.
+# the session parked at CANONICALIZING. READY belongs to Phase 9: the KPI
+# engine advances ANALYZING sessions to READY on success.
 STATE_UPLOADING = "UPLOADING"
 STATE_VALIDATING = "VALIDATING"
 STATE_PROFILING = "PROFILING"
 STATE_CLEANING = "CLEANING"
 STATE_CANONICALIZING = "CANONICALIZING"
 STATE_ANALYZING = "ANALYZING"
+STATE_READY = "READY"
 STATE_FAILED = "FAILED"
 STATE_EXPIRED = "EXPIRED"
 
@@ -58,6 +60,7 @@ class EnvelopeMeta(BaseModel):
     generatedAt: str
     sessionId: str | None = None
     sessionState: str | None = None
+    filters: dict[str, str] = {}
 
 
 class UploadAcceptedData(BaseModel):
@@ -156,6 +159,7 @@ class SessionManifest(BaseModel):
     profileArtifact: str | None = None
     cleaningArtifact: str | None = None
     canonicalArtifact: str | None = None
+    kpiArtifact: str | None = None
 
 
 class SchemaFieldMapping(BaseModel):
@@ -536,3 +540,132 @@ class CanonicalArtifact(BaseModel):
     derivations: list[str]
     notes: list[str]
     canonicalizedAt: str
+
+
+class KpiResult(BaseModel):
+    """One computed KPI (`docs/api-contract.md` kpis[] shape exactly).
+
+    Value representation (api-contract section 6 plus the governed reading
+    recorded in `app/kpis.py`): counts are integers; money is a 2-dp string
+    with no currency symbol; rates are 4-dp fraction strings; day averages
+    and per-order means are 2-dp strings. Unavailable KPIs carry
+    `value: null`, `status: "unavailable"`, and a pinned-vocabulary reason —
+    never zero. `missingDataCount` counts eligible-population rows excluded
+    for a missing required field (kpi-contracts global rule).
+    """
+
+    id: str  # e.g. "kpi.ship.late_rate"
+    label: str  # approved display label from docs/kpi-contracts.md
+    value: int | str | None
+    status: str  # "ok" | "unavailable"
+    numerator: int | str | None
+    denominator: int | str | None
+    population: str
+    exclusions: str
+    reason: str | None = None
+    missingDataCount: int = 0
+
+
+class KpiArtifact(BaseModel):
+    """Derived `kpi_report.json`: headline KPI results + build identity.
+
+    Internal cache: the unfiltered headline set, computed once from the
+    governed canonical tables. Filtered/grouped serving recomputes
+    synchronously from the cached canonical tables (api-contract section 3)
+    and is never persisted. Counts/aggregates only — never row contents,
+    cell values, or personal fields.
+    """
+
+    sessionId: str
+    appVersion: str
+    schemaVersion: int
+    sourceSha256: str
+    sourceRows: int
+    inputCanonicalizedAt: str
+    inputTableShas: dict[str, str]
+    status: str  # "complete"
+    kpis: list[KpiResult]
+    computedAt: str
+
+
+class KpiTotals(BaseModel):
+    """Overview `totals`: unfiltered headline population anchors.
+
+    The underlying populations that filtered views reconcile against
+    (PLAN Phase-9 exit criterion), formatted exactly like KPI values.
+    """
+
+    items: int
+    orders: int
+    eligibleOrders: int
+    grossValue: str
+    discountTotal: str
+    netValue: str
+    profitTotal: str
+    units: int
+
+
+class KpiOverviewData(BaseModel):
+    """`GET /sessions/{id}/kpis/overview` payload (contract shape exactly)."""
+
+    kpis: list[KpiResult]
+    totals: KpiTotals
+
+
+class KpiOverviewResponse(BaseModel):
+    """Success envelope for headline commercial + shipment KPIs."""
+
+    data: KpiOverviewData
+    meta: EnvelopeMeta
+    error: None = None
+
+
+class KpiGroup(BaseModel):
+    """One `by=` slice: the group key plus the re-sliced KPI set.
+
+    Grouping re-slices numerator/denominator under identical formulas
+    (kpi-contracts); per-group unavailable rules apply independently.
+    `UNKNOWN_FLAGGED`/null group keys are excluded from splits (ADR-030).
+    """
+
+    key: str
+    kpis: list[KpiResult]
+
+
+class KpiDeliveryData(BaseModel):
+    """`GET /sessions/{id}/kpis/delivery` payload (contract shape exactly)."""
+
+    groups: list[KpiGroup]
+    eligibleOrders: int
+    exclusions: str
+
+
+class KpiDeliveryResponse(BaseModel):
+    """Success envelope for shipment breakdowns."""
+
+    data: KpiDeliveryData
+    meta: EnvelopeMeta
+    error: None = None
+
+
+class KpiWeightedRates(BaseModel):
+    """Amount-weighted headline rates echoed on the commercial endpoint."""
+
+    profitMargin: str | None
+    discountRate: str | None
+
+
+class KpiCommercialData(BaseModel):
+    """`GET /sessions/{id}/kpis/commercial` payload (contract shape exactly)."""
+
+    groups: list[KpiGroup]
+    statusScope: str
+    weightedRates: KpiWeightedRates
+
+
+class KpiCommercialResponse(BaseModel):
+    """Success envelope for value/profit/discount/units breakdowns."""
+
+    data: KpiCommercialData
+    meta: EnvelopeMeta
+    error: None = None

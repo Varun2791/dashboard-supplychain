@@ -466,6 +466,7 @@ def ensure_cleaned(
                 # A torn manifest carrying a stale canonical pointer must
                 # rebuild it, never adopt it.
                 "canonicalArtifact": None,
+                "kpiArtifact": None,
                 "error": None,
                 "updatedAt": now_iso,
                 "lastAccessedAt": now_iso,
@@ -681,6 +682,7 @@ def ensure_cleaned(
             ),
             # Fresh cleaning output invalidates any downstream build.
             "canonicalArtifact": None,
+            "kpiArtifact": None,
             "error": None,
             "updatedAt": now_iso,
             "lastAccessedAt": now_iso,
@@ -717,11 +719,12 @@ def run_cleaning(session_id: str) -> SessionManifest | None:
     """Execute one cleaning pass for a session (pipeline/recovery body).
 
     On success the Phase-8 canonicalization worker is chained inline (same
-    framework-local runner): cleaned sessions therefore settle at ANALYZING
-    once both steps complete, or park at CANONICALIZING behind a governed
-    quality gate. Safe against reset races: a deleted session (no manifest)
-    is a no-op and is never resurrected. Returns the resulting manifest, or
-    None when there was nothing to do.
+    framework-local runner, which in turn chains Phase-9 KPI analysis):
+    cleaned sessions therefore settle at READY once all steps complete,
+    or park at CANONICALIZING behind a governed quality gate. Safe against
+    reset races: a deleted session (no manifest) is a no-op and is never
+    resurrected. Returns the resulting manifest, or None when there was
+    nothing to do.
     """
     if not session_store.is_valid_session_id(session_id):
         return None
@@ -749,9 +752,10 @@ def recover_cleaning_sessions(session_root: str) -> int:
     """Startup recovery: clean leftover CLEANING sessions, count them.
 
     Covers the crash window between profiling success and cleaning
-    completion. Only the implemented Phase-7 step runs; canonicalization
-    never starts, expired trees are left to the sweep, and valid resumable
-    sessions are never deleted.
+    completion. Only leftover CLEANING sessions are picked up here; the
+    pipeline chain continues through the implemented downstream workers,
+    expired trees are left to the sweep, and valid resumable sessions are
+    never deleted.
     """
     from datetime import datetime
 

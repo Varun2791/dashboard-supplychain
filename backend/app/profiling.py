@@ -8,8 +8,9 @@ the post-response pipeline hook, and startup recovery.
 
 Lifecycle: success advances ``PROFILING -> CLEANING`` and chains the
 Phase-7 cleaning worker inline (which in turn chains Phase-8
-canonicalization), so profiled sessions settle at ANALYZING once all steps
-complete, or park at CANONICALIZING behind a governed quality gate; a
+canonicalization and Phase-9 KPI analysis), so profiled sessions settle at
+READY once all steps complete, or park at CANONICALIZING behind a governed
+quality gate; a
 malformed body fails terminally per DQ-FILE-005
 with ADR-028 raw/derived removal. ``ERROR`` findings on DQ-KEY-001,
 DQ-DATE-001, DQ-GRAIN-001, DQ-GRAIN-003, and DQ-GRAIN-004 name the exact
@@ -447,6 +448,7 @@ def ensure_profiled(
                 # or canonical pointer must rebuild them, never adopt them.
                 "cleaningArtifact": None,
                 "canonicalArtifact": None,
+                "kpiArtifact": None,
                 "error": None,
                 "updatedAt": now_iso,
                 "lastAccessedAt": now_iso,
@@ -557,6 +559,7 @@ def ensure_profiled(
             # A fresh profile invalidates everything downstream.
             "cleaningArtifact": None,
             "canonicalArtifact": None,
+            "kpiArtifact": None,
             "error": None,
             "updatedAt": now_iso,
             "lastAccessedAt": now_iso,
@@ -599,9 +602,10 @@ def run_profiling(session_id: str) -> SessionManifest | None:
     """Execute one profiling pass for a session (pipeline/recovery body).
 
     On success the Phase-7 cleaning worker is chained inline (same
-    framework-local runner, which in turn chains Phase-8 canonicalization):
-    profiled sessions therefore settle at ANALYZING once all steps complete
-    (or park at CANONICALIZING behind a governed quality gate). Safe against
+    framework-local runner, which in turn chains Phase-8 canonicalization
+    and Phase-9 KPI analysis): profiled sessions therefore settle at READY
+    once all steps complete (or park at CANONICALIZING behind a governed
+    quality gate). Safe against
     reset races: a deleted session (no manifest) is a no-op and is never
     resurrected. Returns the resulting manifest, or None when there was
     nothing to do.
@@ -632,9 +636,10 @@ def recover_profiling_sessions(session_root: str) -> int:
     """Startup recovery: profile leftover PROFILING sessions, count them.
 
     Covers the crash window between validation success and profiling
-    completion. Only the already-implemented Phase-6 step runs; later
-    stages are never started, expired trees are left to the sweep, and
-    valid resumable sessions are never deleted.
+    completion. Only leftover PROFILING sessions are picked up here; the
+    pipeline chain continues through the implemented downstream workers,
+    expired trees are left to the sweep, and valid resumable sessions are
+    never deleted.
     """
     from datetime import datetime
 

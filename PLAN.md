@@ -345,7 +345,7 @@ Suggested commit: `feat(model): build canonical supply-chain data model`
 
 ## Phase 9 — KPI engine
 
-**Status: NOT STARTED**
+**Status: [~] partially complete (implementation done; reference-file verification pending)**
 
 ### Objective
 
@@ -353,23 +353,25 @@ Implement one tested source of truth for every V1 KPI.
 
 ### Tasks
 
-- [ ] Implement volume and entity-count KPIs.
-- [ ] Implement gross value, discounts, net value, profit, margin, and average order value.
-- [ ] Implement units, lines per order, units per order, and loss-making-order rate.
-- [ ] Implement eligible shipment population.
-- [ ] Implement late, early, exact-on-schedule, and combined on-schedule rates.
-- [ ] Implement actual/scheduled days and schedule variance.
-- [ ] Implement strict cancellation and suspected-fraud rates separately.
-- [ ] Support dimensional breakdowns without changing KPI contracts.
-- [ ] Return unavailable results for empty eligible populations.
-- [ ] Reconcile the complete DataCo controls.
+- [x] Implement volume and entity-count KPIs. — `backend/app/kpis.py` (`compute_volume`): items/orders/eligible/customers/products/units from canonical grain tables; unavailable (never zero) on empty populations.
+- [x] Implement gross value, discounts, net value, profit, margin, and average order value. — `compute_commercial`: item-grain sums with authoritative recorded net (ADR-008), amount-weighted margin/discount-rate (ADR-014), order-grain AOV; neutral 2-dp money strings, no currency (ADR-010), no recognized-revenue label (ADR-009).
+- [x] Implement units, lines per order, units per order, and loss-making-order rate. — Same module; negatives retained, loss rate at order grain (ADR-017).
+- [x] Implement eligible shipment population. — `shipment_outcome != SHIPPING_CANCELED` at order grain; cancelled rows carry `is_late = null` and never count as non-late (ADR-012).
+- [x] Implement late, early, exact-on-schedule, and combined on-schedule rates. — `compute_delivery` from the governed day-field derivation; early + exact compose on-schedule; `Late_delivery_risk`/`Delivery Status` never classify (ADR-030).
+- [x] Implement actual/scheduled days and schedule variance. — Eligible-population means; negative variance preserved (ahead of schedule).
+- [x] Implement strict cancellation and suspected-fraud rates separately. — Plus the combined shipping-blocked rate, all at order grain (ADR-013).
+- [x] Support dimensional breakdowns without changing KPI contracts. — `GET /kpis/delivery` and `/kpis/commercial` with validated filters and `by=` grouping re-slicing numerator/denominator under identical formulas; `UNKNOWN_FLAGGED` excluded from splits (ADR-030); unknown enums rejected 422, never mapped.
+- [x] Return unavailable results for empty eligible populations. — Pinned reason vocabulary (`empty-eligible-population | zero-denominator | missing-required-fields`), never 0/0% (ADR-031).
+- [~] Reconcile the complete DataCo controls. — NOT YET EXECUTED. Same constraint as Phases 6/8: no local reference file exists (ADR-024). The harness is in place (`backend/tests/test_kpi_reference.py`: always-runnable synthetic golden + `SUPPLYCHAIN_REFERENCE_CSV`-gated reference test asserting every `AGENTS.md` control, skipped in CI). No counts fabricated, no production constants (ADR-020).
 
 ### Exit criteria
 
-- All KPI contract tests pass.
-- Complete reference calculations match `AGENTS.md` controls.
-- Filtered totals reconcile with their underlying populations.
-- No frontend calculation is required to obtain a KPI.
+- [x] All KPI contract tests pass. — 30 KPI IDs/labels pinned against `docs/kpi-contracts.md`; 44 new Phase-9 tests (formulas, adversarial delivery/commercial, lifecycle, endpoints, golden).
+- [~] Complete reference calculations match `AGENTS.md` controls. — Pending the documented reference run (see task above).
+- [x] Filtered totals reconcile with their underlying populations. — Overview `totals` anchors; group numerators reconcile to headlines (tested); filtered recomputation is synchronous from cached canonical tables.
+- [x] No frontend calculation is required to obtain a KPI. — Backend owns all math; frontend change is a minimal READY/settle note only (no KPI fetching, no formulas in TypeScript).
+
+Evidence: `make check` green (backend 268 passed + 1 env-gated skip — 44 new Phase-9 tests; frontend 27 passed — 1 new READY-settled test; Ruff, format, mypy strict, tsc, ESLint 0 errors, Prettier, `vite build` green), live HTTP smoke with synthetic `/tmp` data only (clean → READY with 30 headline KPIs + reconciled totals; empty date filter → unavailable, not error; canonical-blocked → parked CANONICALIZING with KPI endpoints 409 NOT_READY and no KPI artifact; reset → tree gone). Lifecycle: ANALYZING → READY via the chained KPI worker (`ensure_kpis_analyzed`, artifact `derived/kpi_report.json` with canonical-identity adoption); canonical-blocked sessions never analyzed. Orders drilldown endpoint stays deferred to diagnostics (Phase 15); exports untouched (Phase 16).
 
 Suggested commit: `feat(analytics): implement tested supply-chain KPI engine`
 

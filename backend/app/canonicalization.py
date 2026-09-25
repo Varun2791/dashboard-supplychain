@@ -80,11 +80,11 @@ contract leaves mechanics implicit; recorded here, not new ADRs):
   sort), plus the typed `canonical_report.json`. CSV matches the existing
   `cleaned.csv` precedent and keeps Decimal/date round-trips strict.
 
-Lifecycle: success advances CANONICALIZING -> ANALYZING and stops (Phase 9
-owns KPI analysis; no READY is faked). Governed quality blocks keep the
-session parked at CANONICALIZING with the raw retained (recoverable gate,
-not terminal). Internal/artifact failures follow ADR-028 (raw/derived
-removal, manifest-only error metadata).
+Lifecycle: success advances CANONICALIZING -> ANALYZING and chains the
+Phase-9 KPI worker inline (settling at READY). Governed quality blocks
+keep the session parked at CANONICALIZING with the raw retained
+(recoverable gate, not terminal). Internal/artifact failures follow
+ADR-028 (raw/derived removal, manifest-only error metadata).
 
 Execution model: synchronous workers through the existing framework-local
 post-response runner (chained from cleaning). Single-process guard against
@@ -796,6 +796,8 @@ def _adopt_report(
                 f"{session_store.DERIVED_DIRNAME}/"
                 f"{session_store.CANONICAL_ARTIFACT_FILENAME}"
             ),
+            # A fresh canonical build invalidates any downstream KPI cache.
+            "kpiArtifact": None,
             "error": None,
             "updatedAt": now_iso,
             "lastAccessedAt": now_iso,
@@ -814,8 +816,9 @@ def ensure_canonicalized(
 ) -> SessionManifest:
     """Run Phase-8 canonicalization once if still pending; else return stored.
 
-    Success parks at ANALYZING (no KPI analysis runs). Governed quality
-    blocks (duplicate item keys, order-invariance conflicts) park at
+    Success advances to ANALYZING (the Phase-9 KPI worker is chained by
+    `run_canonicalization`, settling at READY). Governed quality blocks
+    (duplicate item keys, order-invariance conflicts) park at
     CANONICALIZING with the raw retained — a gate, not a terminal failure.
     Never mutates raw; verified by SHA before and after.
     """
@@ -1275,6 +1278,8 @@ def ensure_canonicalized(
                 f"{session_store.DERIVED_DIRNAME}/"
                 f"{session_store.CANONICAL_ARTIFACT_FILENAME}"
             ),
+            # A fresh canonical build invalidates any downstream KPI cache.
+            "kpiArtifact": None,
             "error": None,
             "updatedAt": now_iso,
             "lastAccessedAt": now_iso,
@@ -1437,6 +1442,8 @@ def _park_blocked(
                 f"{session_store.DERIVED_DIRNAME}/"
                 f"{session_store.CANONICAL_ARTIFACT_FILENAME}"
             ),
+            # A fresh canonical build invalidates any downstream KPI cache.
+            "kpiArtifact": None,
             "error": None,
             "updatedAt": now_iso,
             "lastAccessedAt": now_iso,
@@ -1478,9 +1485,12 @@ _CANONICALIZATION_IN_PROGRESS: set[str] = set()
 def run_canonicalization(session_id: str) -> SessionManifest | None:
     """Execute one canonicalization pass for a session (pipeline/recovery body).
 
-    Safe against reset races: a deleted session (no manifest) is a no-op
-    and is never resurrected. Returns the resulting manifest, or None when
-    there was nothing to do.
+    On success the Phase-9 KPI worker is chained inline (same
+    framework-local runner): canonicalized sessions therefore settle at
+    READY once both steps complete, or park at CANONICALIZING behind a
+    governed quality gate. Safe against reset races: a deleted session (no
+    manifest) is a no-op and is never resurrected. Returns the resulting
+    manifest, or None when there was nothing to do.
     """
     if not session_store.is_valid_session_id(session_id):
         return None
@@ -1492,7 +1502,14 @@ def run_canonicalization(session_id: str) -> SessionManifest | None:
         manifest = session_store.read_manifest(paths)
         if manifest is None:
             return None
-        return ensure_canonicalized(paths, manifest, session_store.utcnow_naive_iso())
+        result = ensure_canonicalized(paths, manifest, session_store.utcnow_naive_iso())
+        if result.state == STATE_ANALYZING and result.canonicalArtifact is not None:
+            # Local import: KPI analysis owns the reverse dependency.
+            from app.kpis import run_kpi_analysis
+
+            analyzed = run_kpi_analysis(session_id)
+            return analyzed if analyzed is not None else result
+        return result
     finally:
         _CANONICALIZATION_IN_PROGRESS.discard(session_id)
 
@@ -1502,8 +1519,8 @@ def recover_canonicalizing_sessions(session_root: str) -> int:
 
     Covers the crash window between cleaning success and canonicalization
     completion. Sessions already carrying an adopted report (complete or
-    blocked) are left alone; expired trees are left to the sweep; later
-    stages (KPI analysis) never start.
+    blocked) are left alone; expired trees are left to the sweep; leftover
+    ANALYZING sessions are covered by the KPI recovery sweep.
     """
     from datetime import datetime
 

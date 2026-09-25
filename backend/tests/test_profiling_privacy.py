@@ -119,7 +119,7 @@ def test_pii_looking_extras_never_enter_reports(
     session_id = upload_ok(client, content)
     assert (
         client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
-        == "ANALYZING"
+        == "READY"
     )
     profile = client.get(f"/api/v1/sessions/{session_id}/profile").json()
     quality = client.get(f"/api/v1/sessions/{session_id}/data-quality").json()
@@ -152,7 +152,7 @@ def test_hostile_values_stay_inert_and_unreported(
     session_id = upload_ok(client, content)
     assert (
         client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
-        == "ANALYZING"
+        == "READY"
     )
     profile = client.get(f"/api/v1/sessions/{session_id}/profile").json()
     quality = client.get(f"/api/v1/sessions/{session_id}/data-quality").json()

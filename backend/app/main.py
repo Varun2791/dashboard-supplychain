@@ -1,10 +1,10 @@
-"""FastAPI application (Phase 8: ingestion + schema + profiling + cleaning + canonical).
+"""FastAPI application (Phase 9: ingestion through KPI analysis).
 
 Exposes the liveness endpoint plus the upload/status/reset routes and the
-schema, profile, data-quality, and cleaning-report routes from
+schema, profile, data-quality, cleaning-report, and KPI routes from
 `docs/api-contract.md`. Canonical tables stay internal (no table endpoint in
-the contract); KPI and export routes belong to later phases and must not be
-added here.
+the contract); export routes belong to later phases and must not be added
+here.
 """
 
 from collections.abc import AsyncIterator
@@ -21,6 +21,7 @@ from app.canonicalization import recover_canonicalizing_sessions
 from app.cleaning import recover_cleaning_sessions
 from app.config import settings
 from app.ingestion_errors import IngestionError
+from app.kpis import recover_analyzing_sessions
 from app.profiling import recover_profiling_sessions
 from app.schema_validation import recover_validating_sessions
 from app.sessions import sweep_sessions
@@ -55,16 +56,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     Covers the crash window between a 202 response and its post-response
     task (interrupted tasks leave no queue behind by design). Validation
-    recovery chains into profiling, cleaning, and canonicalization, and
-    further sweeps cover sessions left PROFILING, CLEANING, or
-    CANONICALIZING by a restart; expired/corrupt trees are swept first,
-    valid resumable sessions are never deleted, KPI analysis never starts.
+    recovery chains into profiling, cleaning, canonicalization, and KPI
+    analysis, and further sweeps cover sessions left PROFILING, CLEANING,
+    CANONICALIZING, or ANALYZING by a restart; expired/corrupt trees are
+    swept first, valid resumable sessions are never deleted.
     """
     sweep_sessions(settings.session_root, datetime.now())
     recover_validating_sessions(settings.session_root)
     recover_profiling_sessions(settings.session_root)
     recover_cleaning_sessions(settings.session_root)
     recover_canonicalizing_sessions(settings.session_root)
+    recover_analyzing_sessions(settings.session_root)
     yield
 
 

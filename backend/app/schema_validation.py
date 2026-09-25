@@ -284,6 +284,7 @@ def ensure_schema_validated(
             "profileArtifact": None,
             "cleaningArtifact": None,
             "canonicalArtifact": None,
+            "kpiArtifact": None,
             "error": None,
             "updatedAt": now_iso,
             "lastAccessedAt": now_iso,
@@ -354,10 +355,10 @@ def recover_validating_sessions(session_root: str) -> int:
     """Startup recovery: validate leftover VALIDATING sessions, count them.
 
     Covers the crash window between the 202 response and the post-response
-    task (interrupted tasks leave no queue behind by design). Only the
-    already-implemented Phase-5 step runs; later stages are never started,
-    expired/corrupt trees are left to the sweep, and valid resumable
-    sessions are never deleted.
+    task (interrupted tasks leave no queue behind by design). Only leftover
+    VALIDATING sessions are picked up here; the pipeline chain continues
+    through the implemented downstream workers, expired/corrupt trees are
+    left to the sweep, and valid resumable sessions are never deleted.
     """
     recovered = 0
     try:

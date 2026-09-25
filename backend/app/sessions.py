@@ -41,10 +41,12 @@ from app.schemas import (
     STATE_CLEANING,
     STATE_FAILED,
     STATE_PROFILING,
+    STATE_READY,
     STATE_UPLOADING,
     STATE_VALIDATING,
     CanonicalArtifact,
     CleaningArtifact,
+    KpiArtifact,
     ProfilingArtifact,
     SchemaReport,
     SessionManifest,
@@ -69,6 +71,7 @@ CANONICAL_PRODUCTS_FILENAME = "canonical_products.csv"
 CANONICAL_CUSTOMERS_FILENAME = "canonical_customers.csv"
 CANONICAL_CALENDAR_FILENAME = "canonical_calendar.csv"
 CANONICAL_ISSUES_FILENAME = "canonical_data_quality_issues.csv"
+KPI_ARTIFACT_FILENAME = "kpi_report.json"
 
 
 def utcnow_naive_iso() -> str:
@@ -267,7 +270,7 @@ def make_canonicalizing_progress() -> SessionProgress:
 
 
 def make_analyzing_progress() -> SessionProgress:
-    """Truthful Phase-8 progress: CANONICALIZING done, parked at ANALYZING."""
+    """Truthful Phase-9 progress: CANONICALIZING done, KPI analysis running."""
     current_index = FORWARD_STATES.index(STATE_ANALYZING)
     return SessionProgress(
         completedStages=[
@@ -279,7 +282,25 @@ def make_analyzing_progress() -> SessionProgress:
         ],
         currentStage=STATE_ANALYZING,
         remainingStages=[stage for stage in FORWARD_STATES[current_index + 1 :]],
-        note="Canonical tables are built; KPI analysis is not implemented yet.",
+        note="Canonical tables are built; KPI analysis is running.",
+    )
+
+
+def make_ready_progress() -> SessionProgress:
+    """Truthful Phase-9 progress: pipeline complete, results servable."""
+    current_index = FORWARD_STATES.index(STATE_READY)
+    return SessionProgress(
+        completedStages=[
+            STATE_UPLOADING,
+            STATE_VALIDATING,
+            STATE_PROFILING,
+            STATE_CLEANING,
+            STATE_CANONICALIZING,
+            STATE_ANALYZING,
+        ],
+        currentStage=STATE_READY,
+        remainingStages=[stage for stage in FORWARD_STATES[current_index + 1 :]],
+        note="KPI analysis is complete; dashboard and export endpoints serve results.",
     )
 
 
@@ -369,6 +390,26 @@ def read_canonical_report(paths: SessionPaths) -> CanonicalArtifact | None:
         with open(canonical_artifact_path(paths), encoding="utf-8") as handle:
             payload = json.load(handle)
         return CanonicalArtifact.model_validate(payload)
+    except (OSError, ValueError, ValidationError):
+        return None
+
+
+def kpi_artifact_path(paths: SessionPaths) -> str:
+    """Derived-area location of the KPI report (raw stays untouched)."""
+    return os.path.join(paths.derived, KPI_ARTIFACT_FILENAME)
+
+
+def write_kpi_report(paths: SessionPaths, report: KpiArtifact) -> None:
+    """Persist the KPI report atomically into `derived/`."""
+    _atomic_write_json(kpi_artifact_path(paths), report.model_dump_json())
+
+
+def read_kpi_report(paths: SessionPaths) -> KpiArtifact | None:
+    """Load the KPI report; corrupt/missing input yields None."""
+    try:
+        with open(kpi_artifact_path(paths), encoding="utf-8") as handle:
+            payload = json.load(handle)
+        return KpiArtifact.model_validate(payload)
     except (OSError, ValueError, ValidationError):
         return None
 

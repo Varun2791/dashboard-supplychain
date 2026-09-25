@@ -130,6 +130,37 @@ const STATUS_ANALYZING = {
   error: null,
 };
 
+const STATUS_READY = {
+  data: {
+    state: "READY",
+    stage: "READY",
+    progress: {
+      completedStages: [
+        "UPLOADING",
+        "VALIDATING",
+        "PROFILING",
+        "CLEANING",
+        "CANONICALIZING",
+        "ANALYZING",
+      ],
+      currentStage: "READY",
+      remainingStages: [],
+      note: "KPI analysis is complete; dashboard and export endpoints serve results.",
+    },
+    startedAt: "2026-09-24T00:00:00",
+    updatedAt: "2026-09-24T00:00:02",
+    error: null,
+  },
+  meta: {
+    appVersion: "0.1.0",
+    schemaVersion: 1,
+    generatedAt: "2026-09-24T00:00:02",
+    sessionId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    sessionState: "READY",
+  },
+  error: null,
+};
+
 const PROFILE_OK = {
   data: {
     rows: 4,
@@ -658,6 +689,19 @@ describe("UploadSession", () => {
     ]) {
       expect(note).not.toHaveTextContent(term);
     }
+  });
+
+  it("states analysis completion without the unavailable copy", async () => {
+    stubPhase6Fetch(QUALITY_OK, CLEANING_OK, STATUS_READY);
+    render(<UploadSession />);
+    fireEvent.change(screen.getByTestId("file-input"), {
+      target: { files: [csvFile()] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^upload$/i }));
+    const note = await screen.findByTestId("status-note");
+    expect(note).toHaveTextContent(/kpi analysis is complete/i);
+    expect(note).toHaveTextContent(/ready for the dashboard views/i);
+    expect(note).not.toHaveTextContent(/not available/i);
   });
 
   it("states the canonicalization gate instead of implying progress", async () => {

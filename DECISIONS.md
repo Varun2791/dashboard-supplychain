@@ -919,6 +919,64 @@ verification still pending); Phase 8 consumes and enforces it.
 
 ---
 
+## ADR-037 — Phase-9 KPI serving mechanics
+
+**Status:** Accepted
+**Date:** 2026-09-25
+
+### Context
+
+The KPI contracts (`docs/kpi-contracts.md`, `docs/api-contract.md`) fix every
+formula, grain, population, label, and unavailable semantic, but leave four
+mechanics implicit: the JSON form of non-money values, the source of two
+order-level derived inputs the orders table does not store, ownership of the
+three KPI routes, and what overview `totals` carries.
+
+### Decision
+
+Smallest deterministic readings, changing no contract:
+
+- Value representation: counts are integers; money is 2-dp strings
+  (contract-pinned); rates are 4-dp fraction strings (the contract's
+  "4 decimals in tests/exports" reading, Decimal-safe in JSON); day
+  averages and per-order means are 2-dp strings. Rounding applies only at
+  this boundary (ROUND_HALF_UP).
+- Order variance and order month reuse the governed canonical-schema §6
+  formulas on canonical order fields (`actual − scheduled`; date part of
+  `order_timestamp`), because the orders table stores neither column. This
+  is derivation reuse, not recomputed classification.
+- Phase 9 owns `GET /kpis/overview`, `/kpis/delivery`, and `/kpis/commercial`
+  (no later backend phase builds them; dashboard phases consume them).
+  The order-drilldown endpoint stays deferred to diagnostics (Phase 15).
+- Overview `totals` carries the unfiltered headline population anchors the
+  filtered views reconcile against. Unfiltered overview serves the stored
+  headline set; filtered/grouped serving recomputes synchronously from the
+  cached canonical tables (deterministic-identical, tested).
+- Canonical-blocked sessions are never analyzed: KPI endpoints answer 409
+  NOT_READY there, so per-table gates are never bypassed.
+- Shipment-adherence eligibility (clarification of the contract's global
+  missing-data rule — "a row missing a KPI's required field is excluded
+  from that KPI" — not a new business definition; ADR-012 unchanged): an
+  order is eligible for adherence KPIs only when `shipment_outcome` holds a
+  governed classified outcome (`LATE`, `EARLY`, or `ON_SCHEDULE`, the exact-
+  on-schedule value; no `EXACT` token exists in the Phase-8 derivation).
+  `SHIPPING_CANCELED` is ineligible; null/empty/unclassifiable outcomes
+  (non-cancelled rows missing day-field inputs) are excluded from adherence
+  denominators and counted in `missingDataCount` where governed, so
+  `late + early + exact = eligible` holds over the classifiable population
+  and the eligible count is unavailable (never `0`/`ok`) when none exists.
+- Grouped delivery keeps identical formulas re-sliced: adherence metrics
+  derive from the classifiable grouped subset while strict/fraud/blocked
+  rates keep their governed all-orders denominators restricted to the same
+  group key.
+
+### Consequences
+
+- Serving behavior is reviewable here without re-reading the engine.
+- Any change to these readings requires a new accepted decision.
+
+---
+
 ## Decision-change template
 
 Copy this section when proposing a new material decision:

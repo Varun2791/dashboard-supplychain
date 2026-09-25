@@ -200,16 +200,14 @@ def test_to_string_frame_renders_nulls_dates_money() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_small_fixture_settles_at_analyzing(
-    client: TestClient, session_root: str
-) -> None:
+def test_small_fixture_settles_at_ready(client: TestClient, session_root: str) -> None:
     session_id = upload_ok(client, CANON_BYTES)
     data = client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]
-    assert data["state"] == "ANALYZING"
-    assert data["stage"] == "ANALYZING"
+    assert data["state"] == "READY"
+    assert data["stage"] == "READY"
     assert data["error"] is None
-    assert data["progress"]["currentStage"] == "ANALYZING"
-    assert "READY" not in data["progress"]["completedStages"]
+    assert data["progress"]["currentStage"] == "READY"
+    assert "ANALYZING" in data["progress"]["completedStages"]
     paths = session_store.session_paths(session_root, session_id)
     assert sorted(os.listdir(paths.derived)) == [
         "canonical_calendar.csv",
@@ -221,11 +219,13 @@ def test_small_fixture_settles_at_analyzing(
         "canonical_report.json",
         "cleaned.csv",
         "cleaning_report.json",
+        "kpi_report.json",
         "profiling_report.json",
         "schema_report.json",
     ]
     manifest = session_store.read_manifest(paths)
     assert manifest is not None and manifest.canonicalArtifact is not None
+    assert manifest.kpiArtifact is not None
     with open(paths.raw, "rb") as handle:
         assert handle.read() == CANON_BYTES
 
@@ -523,7 +523,7 @@ def test_missing_days_derive_null_outcome_without_blocking(
     session_id = upload_ok(client, content)
     assert (
         client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
-        == "ANALYZING"
+        == "READY"
     )
     items = read_table(session_root, session_id, "canonical_order_items.csv")
     assert items["shipment_outcome"].tolist() == [""]
@@ -547,7 +547,7 @@ def test_single_invalid_order_date_travels_as_null(
     # One parseable date exists: per-row failure travels, build completes.
     assert (
         client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
-        == "ANALYZING"
+        == "READY"
     )
     items = by_key(
         read_table(session_root, session_id, "canonical_order_items.csv"),
@@ -808,7 +808,7 @@ def test_corrupt_canonical_report_is_recomputed_not_adopted(
     manifest.canonicalArtifact = None
     session_store.write_manifest(paths, manifest)
     recomputed = canonical_service.run_canonicalization(session_id)
-    assert recomputed is not None and recomputed.state == "ANALYZING"
+    assert recomputed is not None and recomputed.state == "READY"
     assert session_store.read_canonical_report(paths) is not None
 
 
@@ -827,7 +827,7 @@ def test_corrupt_canonical_table_is_rebuilt(
     manifest.canonicalArtifact = None
     session_store.write_manifest(paths, manifest)
     rebuilt = canonical_service.run_canonicalization(session_id)
-    assert rebuilt is not None and rebuilt.state == "ANALYZING"
+    assert rebuilt is not None and rebuilt.state == "READY"
     items = read_table(session_root, session_id, "canonical_order_items.csv")
     assert len(items) == 6
 
@@ -875,7 +875,7 @@ def test_foreign_artifact_is_recomputed_not_adopted(session_root: str) -> None:
     ) as handle:
         handle.write(forged)
     recomputed = canonical_service.run_canonicalization(second)
-    assert recomputed is not None and recomputed.state == "ANALYZING"
+    assert recomputed is not None and recomputed.state == "READY"
     artifact = canonical_report(session_root, second)
     assert artifact.sessionId == second
 
@@ -899,7 +899,7 @@ def test_stale_version_is_recomputed_not_adopted(session_root: str) -> None:
     manifest.canonicalArtifact = None
     session_store.write_manifest(paths, manifest)
     recomputed = canonical_service.run_canonicalization(session_id)
-    assert recomputed is not None and recomputed.state == "ANALYZING"
+    assert recomputed is not None and recomputed.state == "READY"
     assert canonical_report(session_root, session_id).appVersion == settings.app_version
 
 
@@ -915,7 +915,7 @@ def test_partial_write_is_rebuilt(session_root: str) -> None:
     manifest.canonicalArtifact = None
     session_store.write_manifest(paths, manifest)
     rebuilt = canonical_service.run_canonicalization(session_id)
-    assert rebuilt is not None and rebuilt.state == "ANALYZING"
+    assert rebuilt is not None and rebuilt.state == "READY"
     assert len(read_table(session_root, session_id, "canonical_orders.csv")) == 4
 
 
@@ -934,7 +934,7 @@ def test_report_write_failure_leaves_safe_rerunnable_state(
     assert stalled.canonicalArtifact is None
     monkeypatch.setattr(session_store, "write_canonical_report", real_write)
     recovered = canonical_service.run_canonicalization(session_id)
-    assert recovered is not None and recovered.state == "ANALYZING"
+    assert recovered is not None and recovered.state == "READY"
 
 
 def test_manifest_write_failure_after_tables_adopted_on_rerun(
@@ -959,21 +959,22 @@ def test_manifest_write_failure_after_tables_adopted_on_rerun(
     assert session_store.read_canonical_report(paths) is not None
     monkeypatch.setattr(session_store, "write_manifest", real_write)
     adopted = canonical_service.run_canonicalization(session_id)
-    assert adopted is not None and adopted.state == "ANALYZING"
+    assert adopted is not None and adopted.state == "READY"
     assert adopted.canonicalArtifact is not None
+    assert adopted.kpiArtifact is not None
 
 
 def test_completed_rerun_is_a_noop(session_root: str) -> None:
     session_id = park_at_canonicalizing(session_root, CANON_BYTES)
     first = canonical_service.run_canonicalization(session_id)
-    assert first is not None and first.state == "ANALYZING"
+    assert first is not None and first.state == "READY"
     paths = session_store.session_paths(session_root, session_id)
     with open(
         os.path.join(paths.derived, "canonical_report.json"), encoding="utf-8"
     ) as handle:
         before = handle.read()
     second = canonical_service.run_canonicalization(session_id)
-    assert second is not None and second.state == "ANALYZING"
+    assert second is not None and second.state == "READY"
     with open(
         os.path.join(paths.derived, "canonical_report.json"), encoding="utf-8"
     ) as handle:
@@ -997,7 +998,7 @@ def test_recover_canonicalizing_sessions_covers_crash_window(
     good_manifest = session_store.read_manifest(
         session_store.session_paths(session_root, good)
     )
-    assert good_manifest is not None and good_manifest.state == "ANALYZING"
+    assert good_manifest is not None and good_manifest.state == "READY"
     assert os.path.isdir(stale_paths.root)
 
 
@@ -1032,9 +1033,9 @@ def test_status_touches_cannot_regress_canonicalizing(session_root: str) -> None
     for thread in threads:
         thread.join()
     assert not errors
-    assert done is not None and done.state == "ANALYZING"
+    assert done is not None and done.state == "READY"
     final = session_store.read_manifest(paths)
-    assert final is not None and final.state == "ANALYZING"
+    assert final is not None and final.state == "READY"
     assert session_store.read_canonical_report(paths) is not None
 
 
@@ -1045,7 +1046,7 @@ def test_duplicate_worker_invocation_is_safe(
     first = canonical_service.run_canonicalization(session_id)
     second = canonical_service.run_canonicalization(session_id)
     assert first is not None and second is not None
-    assert first.state == second.state == "ANALYZING"
+    assert first.state == second.state == "READY"
     canonical_service._CANONICALIZATION_IN_PROGRESS.add(session_id)
     try:
         assert canonical_service.run_canonicalization(session_id) is None
