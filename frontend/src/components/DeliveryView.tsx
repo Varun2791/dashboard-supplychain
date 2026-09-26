@@ -29,6 +29,8 @@ import {
 import { formatKpiValue } from "@/lib/kpi-format";
 import { KpiCard } from "@/components/OverviewView";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
+import FilterBar from "@/components/FilterBar";
+import { useAnalyticsFilters } from "@/lib/analytics-filters";
 import { useSession } from "@/lib/session";
 import { VIEWS } from "@/lib/view-registry";
 
@@ -320,10 +322,13 @@ function BreakdownSection({
  */
 export default function DeliveryView() {
   const { session, sessionState } = useSession();
-  // Reports are immutable per session: an id-keyed cache plus the render
-  // guard below keeps reset (null) and FAILED from showing stale results.
+  const { query, filterKey } = useAnalyticsFilters();
+  // Reports are immutable per session and filter combination: an id-keyed
+  // cache plus the render guard below keeps reset (null) and FAILED from
+  // showing stale results. Stale completions are ignored so an old filter
+  // state can never populate the current view.
   const [cache, setCache] = useState<{
-    sessionId: string;
+    key: string;
     reports: DeliveryReports | null;
     failure: Failure | null;
     failedAtState: string | null;
@@ -331,8 +336,11 @@ export default function DeliveryView() {
 
   const sessionId = session?.sessionId ?? null;
   const terminal = sessionState === "FAILED";
+  const key = sessionId === null ? null : `${sessionId}|${filterKey}`;
   const visible =
-    cache !== null && cache.sessionId === sessionId && !terminal ? cache : null;
+    cache !== null && key !== null && cache.key === key && !terminal
+      ? cache
+      : null;
   const reports = visible?.reports ?? null;
   const failure = visible?.failure ?? null;
 
@@ -340,20 +348,22 @@ export default function DeliveryView() {
   // session state advances. Stale completions are ignored so session A can
   // never populate session B.
   useEffect(() => {
-    if (sessionId === null || terminal) {
+    if (sessionId === null || terminal || key === null) {
       return;
     }
-    if (cache?.sessionId === sessionId && cache.reports !== null) {
+    if (cache?.key === key && cache.reports !== null) {
       return;
     }
     if (
-      cache?.sessionId === sessionId &&
+      cache?.key === key &&
       cache.failure !== null &&
       cache.failedAtState === sessionState
     ) {
       return;
     }
     let cancelled = false;
+    const requestKey = key;
+    const requestQuery = query;
     void (async () => {
       try {
         const [
@@ -365,19 +375,19 @@ export default function DeliveryView() {
           byCategory,
           byMonth,
         ] = await Promise.all([
-          fetchKpisOverview(sessionId),
-          fetchKpisDelivery(sessionId, null),
-          fetchKpisDelivery(sessionId, "shipping_mode"),
-          fetchKpisDelivery(sessionId, "destination_region"),
-          fetchKpisDelivery(sessionId, "destination_market"),
-          fetchKpisDelivery(sessionId, "category_name"),
-          fetchKpisDelivery(sessionId, "order_month"),
+          fetchKpisOverview(sessionId, requestQuery),
+          fetchKpisDelivery(sessionId, null, requestQuery),
+          fetchKpisDelivery(sessionId, "shipping_mode", requestQuery),
+          fetchKpisDelivery(sessionId, "destination_region", requestQuery),
+          fetchKpisDelivery(sessionId, "destination_market", requestQuery),
+          fetchKpisDelivery(sessionId, "category_name", requestQuery),
+          fetchKpisDelivery(sessionId, "order_month", requestQuery),
         ]);
         if (cancelled) {
           return;
         }
         setCache({
-          sessionId,
+          key: requestKey,
           reports: {
             overview,
             delivery,
@@ -400,7 +410,7 @@ export default function DeliveryView() {
           return;
         }
         setCache({
-          sessionId,
+          key: requestKey,
           reports: null,
           failure: toFailure(error),
           failedAtState: sessionState,
@@ -410,7 +420,7 @@ export default function DeliveryView() {
     return () => {
       cancelled = true;
     };
-  }, [sessionId, terminal, sessionState, cache]);
+  }, [sessionId, terminal, sessionState, cache, key, query]);
 
   const meta = VIEWS.find((entry) => entry.id === "delivery");
 
@@ -465,7 +475,8 @@ export default function DeliveryView() {
         >
           Delivery
         </h2>
-        <div className="mt-4">
+        <div className="mt-4 flex flex-col gap-4">
+          <FilterBar idPrefix="delivery" />
           <ErrorState
             title="The shipment results could not be loaded"
             message={failure.message}
@@ -494,7 +505,8 @@ export default function DeliveryView() {
         >
           Delivery
         </h2>
-        <div className="mt-4 flex flex-col gap-2">
+        <div className="mt-4 flex flex-col gap-4">
+          <FilterBar idPrefix="delivery" />
           <LoadingState label="Loading the shipment results…" />
           <p className="text-sm text-muted-foreground">
             Session {session.sessionId.slice(0, 8)} is{" "}
@@ -543,6 +555,7 @@ export default function DeliveryView() {
           drilldown belongs to Phase 15 diagnostics.
         </p>
       </div>
+      <FilterBar idPrefix="delivery" />
       <section aria-labelledby="delivery-headline-heading">
         <h3 id="delivery-headline-heading" className="text-base font-semibold">
           Shipment schedule adherence

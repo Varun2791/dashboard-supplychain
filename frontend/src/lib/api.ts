@@ -2,11 +2,14 @@ import type {
   ApiErrorPayload,
   CleaningReportData,
   DataQualityData,
+  FilterOptionsData,
   KpiCommercialData,
   KpiDeliveryData,
   KpiGroup,
   KpiOverviewData,
   KpiResult,
+  OrdersData,
+  OrderRow,
   ProfileData,
   SchemaReportData,
   SessionStatusData,
@@ -17,16 +20,74 @@ export type {
   ApiErrorPayload,
   CleaningReportData,
   DataQualityData,
+  FilterOptionsData,
   KpiCommercialData,
   KpiDeliveryData,
   KpiGroup,
   KpiOverviewData,
   KpiResult,
+  OrdersData,
+  OrderRow,
   ProfileData,
   SchemaReportData,
   SessionStatusData,
   UploadAcceptedData,
 };
+
+/**
+ * Shared Phase-15 analytics filter query (ADR-038 subset, contract §5).
+ * Single value per dimension; absent means "All". `department` and
+ * `customer_segment` stay accepted backend parameters but are not Phase-15
+ * UI filters, so they never appear here.
+ */
+export interface FilterQuery {
+  from?: string;
+  to?: string;
+  market?: string;
+  region?: string;
+  category?: string;
+  shipping_mode?: string;
+  order_status?: string;
+  shipment_outcome?: string;
+}
+
+/**
+ * One shared serialization path for active analytics filters (contract §5
+ * query names). Inactive/All values are omitted — never sent as empty
+ * strings, "All", or undefined text. Used identically by overview,
+ * delivery, commercial, and orders requests: no per-view reinterpretation.
+ */
+export function serializeFilters(query: FilterQuery): string {
+  const params = new URLSearchParams();
+  const entries: Array<[string, string | undefined]> = [
+    ["from", query.from],
+    ["to", query.to],
+    ["market", query.market],
+    ["region", query.region],
+    ["category", query.category],
+    ["shipping_mode", query.shipping_mode],
+    ["order_status", query.order_status],
+    ["shipment_outcome", query.shipment_outcome],
+  ];
+  for (const [name, value] of entries) {
+    if (value !== undefined && value !== "") {
+      params.set(name, value);
+    }
+  }
+  return params.toString();
+}
+
+/** Append serialized active filters to a path (`?`/`&` handled). */
+function withFilters(path: string, filters?: FilterQuery): string {
+  if (filters === undefined) {
+    return path;
+  }
+  const serialized = serializeFilters(filters);
+  if (serialized === "") {
+    return path;
+  }
+  return path.includes("?") ? `${path}&${serialized}` : `${path}?${serialized}`;
+}
 
 /** Relative-first base URL: same-origin in production, Vite proxy in dev. */
 const API_BASE: string =
@@ -365,11 +426,15 @@ export async function fetchDataQuality(
 /** Read the Phase-9 headline commercial + shipment KPIs (contract shape). */
 export async function fetchKpisOverview(
   sessionId: string,
+  filters?: FilterQuery,
 ): Promise<KpiOverviewData> {
   let response: Response;
   try {
     response = await fetch(
-      `${API_BASE}/api/v1/sessions/${encodeURIComponent(sessionId)}/kpis/overview`,
+      withFilters(
+        `${API_BASE}/api/v1/sessions/${encodeURIComponent(sessionId)}/kpis/overview`,
+        filters,
+      ),
     );
   } catch {
     throw new ApiRequestError(
@@ -397,12 +462,16 @@ export async function fetchKpisOverview(
 export async function fetchKpisDelivery(
   sessionId: string,
   by: string | null,
+  filters?: FilterQuery,
 ): Promise<KpiDeliveryData> {
   const query = by !== null ? `?by=${encodeURIComponent(by)}` : "";
   let response: Response;
   try {
     response = await fetch(
-      `${API_BASE}/api/v1/sessions/${encodeURIComponent(sessionId)}/kpis/delivery${query}`,
+      withFilters(
+        `${API_BASE}/api/v1/sessions/${encodeURIComponent(sessionId)}/kpis/delivery${query}`,
+        filters,
+      ),
     );
   } catch {
     throw new ApiRequestError(
@@ -430,12 +499,16 @@ export async function fetchKpisDelivery(
 export async function fetchKpisCommercial(
   sessionId: string,
   by: string | null,
+  filters?: FilterQuery,
 ): Promise<KpiCommercialData> {
   const query = by !== null ? `?by=${encodeURIComponent(by)}` : "";
   let response: Response;
   try {
     response = await fetch(
-      `${API_BASE}/api/v1/sessions/${encodeURIComponent(sessionId)}/kpis/commercial${query}`,
+      withFilters(
+        `${API_BASE}/api/v1/sessions/${encodeURIComponent(sessionId)}/kpis/commercial${query}`,
+        filters,
+      ),
     );
   } catch {
     throw new ApiRequestError(
@@ -455,6 +528,130 @@ export async function fetchKpisCommercial(
   const { message, code, details } = envelopeError(
     payload,
     "Could not read the commercial KPIs.",
+  );
+  throw new ApiRequestError(response.status, message, code, details);
+}
+
+/**
+ * Read the Phase-15 open filter domains + date extent (ADR-038, contract
+ * §3). Session-wide and non-cascading: no filter parameters are accepted,
+ * so the UNFILTERED session domain is always returned.
+ */
+export async function fetchFilterOptions(
+  sessionId: string,
+): Promise<FilterOptionsData> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `${API_BASE}/api/v1/sessions/${encodeURIComponent(sessionId)}/filter-options`,
+    );
+  } catch {
+    throw new ApiRequestError(
+      0,
+      "Could not reach the local server. Start the backend and try again.",
+    );
+  }
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  if (response.ok) {
+    const data = (payload as { data: unknown }).data;
+    if (!isFilterOptionsData(data)) {
+      throw new ApiRequestError(
+        response.status,
+        "The filter options had an unexpected shape.",
+        null,
+        null,
+      );
+    }
+    return data;
+  }
+  const { message, code, details } = envelopeError(
+    payload,
+    "Could not read the filter options.",
+  );
+  throw new ApiRequestError(response.status, message, code, details);
+}
+
+/** Producer-realistic shape guard: never trust a 200 payload blindly. */
+function isFilterOptionsData(data: unknown): data is FilterOptionsData {
+  if (typeof data !== "object" || data === null) {
+    return false;
+  }
+  const record = data as Record<string, unknown>;
+  const range = record.dateRange;
+  if (typeof range !== "object" || range === null) {
+    return false;
+  }
+  const rangeRecord = range as Record<string, unknown>;
+  for (const key of ["minOrderDate", "maxOrderDate"]) {
+    const value = rangeRecord[key];
+    if (value !== null && typeof value !== "string") {
+      return false;
+    }
+  }
+  for (const key of ["markets", "regions", "categories"]) {
+    const value = record[key];
+    if (
+      !Array.isArray(value) ||
+      value.some((entry) => typeof entry !== "string")
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export interface OrdersQuery extends FilterQuery {
+  limit?: number;
+  /** Opaque producer cursor; absent starts at the first page. Never decoded. */
+  cursor?: string;
+}
+
+/**
+ * Read the sanitized one-row-per-order drilldown (ADR-038, contract §3)
+ * under the shared filters. The cursor is treated as opaque: callers pass
+ * back the returned `nextCursor` verbatim and never derive positions from
+ * row values.
+ */
+export async function fetchOrders(
+  sessionId: string,
+  query: OrdersQuery = {},
+): Promise<OrdersData> {
+  const params = new URLSearchParams(serializeFilters(query));
+  if (query.limit !== undefined) {
+    params.set("limit", String(query.limit));
+  }
+  if (query.cursor !== undefined && query.cursor !== "") {
+    params.set("cursor", query.cursor);
+  }
+  const suffix = params.toString() === "" ? "" : `?${params.toString()}`;
+  let response: Response;
+  try {
+    response = await fetch(
+      `${API_BASE}/api/v1/sessions/${encodeURIComponent(sessionId)}/orders${suffix}`,
+    );
+  } catch {
+    throw new ApiRequestError(
+      0,
+      "Could not reach the local server. Start the backend and try again.",
+    );
+  }
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  if (response.ok) {
+    return (payload as { data: OrdersData }).data;
+  }
+  const { message, code, details } = envelopeError(
+    payload,
+    "Could not read the order records.",
   );
   throw new ApiRequestError(response.status, message, code, details);
 }

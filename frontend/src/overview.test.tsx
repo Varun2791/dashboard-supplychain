@@ -420,12 +420,25 @@ describe("Phase-12 Executive Overview", () => {
     ).toBeInTheDocument();
   });
 
-  it("exposes no interactive filters; filtering stays deferred", async () => {
+  it("exposes the shared analytics filters and refetches on change", async () => {
     renderSeeded(snapshotFor(SESSION_A, "READY"));
     goToOverview();
     await screen.findAllByText("Recorded net order value");
-    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
-    expect(document.querySelector("#overview select")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Reset filters" }),
+    ).toBeDisabled();
+    const mode = screen.getByLabelText("Shipping mode");
+    expect(mode).toBeEnabled();
+    fireEvent.change(mode, { target: { value: "SAME_DAY" } });
+    await waitFor(() => {
+      expect(
+        fetchCalls().some(
+          (url) =>
+            url.includes("/kpis/overview") &&
+            url.includes("shipping_mode=SAME_DAY"),
+        ),
+      ).toBe(true);
+    });
   });
 
   it("shows a terminal FAILED state without requesting KPIs", async () => {

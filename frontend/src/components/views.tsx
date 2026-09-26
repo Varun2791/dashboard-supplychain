@@ -6,6 +6,7 @@ import type { DashboardView, ViewMeta } from "@/lib/view-registry";
 import DataQualityView from "@/components/DataQualityView";
 import CommercialView from "@/components/CommercialView";
 import DeliveryView from "@/components/DeliveryView";
+import DiagnosticsView from "@/components/DiagnosticsView";
 import OverviewView from "@/components/OverviewView";
 import UploadSession from "@/components/UploadSession";
 
@@ -60,6 +61,8 @@ export function ActiveView({
         <DeliveryView />
       ) : view === "commercial" ? (
         <CommercialView />
+      ) : view === "diagnostics" ? (
+        <DiagnosticsView />
       ) : view !== "upload" && meta !== undefined ? (
         <FutureView meta={meta} />
       ) : null}

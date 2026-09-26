@@ -606,12 +606,25 @@ describe("Phase-14 Commercial analytics", () => {
     expect(screen.getByText(/not recognized revenue/i)).toBeInTheDocument();
   });
 
-  it("exposes no interactive filters; filtering stays deferred", async () => {
+  it("exposes the shared analytics filters and refetches on change", async () => {
     renderSeeded(snapshotFor(SESSION_A, "READY"));
     goToCommercial();
     await screen.findAllByText("Recorded net order value");
-    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
-    expect(commercialSection().querySelector("select")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Reset filters" }),
+    ).toBeDisabled();
+    const mode = screen.getByLabelText("Shipping mode");
+    expect(mode).toBeEnabled();
+    fireEvent.change(mode, { target: { value: "SAME_DAY" } });
+    await waitFor(() => {
+      expect(
+        fetchCalls().some(
+          (url) =>
+            url.includes("/kpis/commercial") &&
+            url.includes("shipping_mode=SAME_DAY"),
+        ),
+      ).toBe(true);
+    });
   });
 
   it("exposes no personal fields in the customer-segment breakdown", async () => {

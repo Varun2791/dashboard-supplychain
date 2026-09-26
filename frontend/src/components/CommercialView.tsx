@@ -29,6 +29,8 @@ import {
 import { formatKpiValue } from "@/lib/kpi-format";
 import { KpiCard } from "@/components/OverviewView";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
+import FilterBar from "@/components/FilterBar";
+import { useAnalyticsFilters } from "@/lib/analytics-filters";
 import { useSession } from "@/lib/session";
 import { VIEWS } from "@/lib/view-registry";
 
@@ -287,10 +289,13 @@ function BreakdownSection({
  */
 export default function CommercialView() {
   const { session, sessionState } = useSession();
-  // Reports are immutable per session: an id-keyed cache plus the render
-  // guard below keeps reset (null) and FAILED from showing stale results.
+  const { query, filterKey } = useAnalyticsFilters();
+  // Reports are immutable per session and filter combination: an id-keyed
+  // cache plus the render guard below keeps reset (null) and FAILED from
+  // showing stale results. Stale completions are ignored so an old filter
+  // state can never populate the current view.
   const [cache, setCache] = useState<{
-    sessionId: string;
+    key: string;
     reports: CommercialReports | null;
     failure: Failure | null;
     failedAtState: string | null;
@@ -298,8 +303,11 @@ export default function CommercialView() {
 
   const sessionId = session?.sessionId ?? null;
   const terminal = sessionState === "FAILED";
+  const key = sessionId === null ? null : `${sessionId}|${filterKey}`;
   const visible =
-    cache !== null && cache.sessionId === sessionId && !terminal ? cache : null;
+    cache !== null && key !== null && cache.key === key && !terminal
+      ? cache
+      : null;
   const reports = visible?.reports ?? null;
   const failure = visible?.failure ?? null;
 
@@ -307,20 +315,22 @@ export default function CommercialView() {
   // session state advances. Stale completions are ignored so session A can
   // never populate session B.
   useEffect(() => {
-    if (sessionId === null || terminal) {
+    if (sessionId === null || terminal || key === null) {
       return;
     }
-    if (cache?.sessionId === sessionId && cache.reports !== null) {
+    if (cache?.key === key && cache.reports !== null) {
       return;
     }
     if (
-      cache?.sessionId === sessionId &&
+      cache?.key === key &&
       cache.failure !== null &&
       cache.failedAtState === sessionState
     ) {
       return;
     }
     let cancelled = false;
+    const requestKey = key;
+    const requestQuery = query;
     void (async () => {
       try {
         const [
@@ -333,20 +343,20 @@ export default function CommercialView() {
           byRegion,
           bySegment,
         ] = await Promise.all([
-          fetchKpisOverview(sessionId),
-          fetchKpisCommercial(sessionId, null),
-          fetchKpisCommercial(sessionId, "department_name"),
-          fetchKpisCommercial(sessionId, "category_name"),
-          fetchKpisCommercial(sessionId, "product_name"),
-          fetchKpisCommercial(sessionId, "destination_market"),
-          fetchKpisCommercial(sessionId, "destination_region"),
-          fetchKpisCommercial(sessionId, "customer_segment"),
+          fetchKpisOverview(sessionId, requestQuery),
+          fetchKpisCommercial(sessionId, null, requestQuery),
+          fetchKpisCommercial(sessionId, "department_name", requestQuery),
+          fetchKpisCommercial(sessionId, "category_name", requestQuery),
+          fetchKpisCommercial(sessionId, "product_name", requestQuery),
+          fetchKpisCommercial(sessionId, "destination_market", requestQuery),
+          fetchKpisCommercial(sessionId, "destination_region", requestQuery),
+          fetchKpisCommercial(sessionId, "customer_segment", requestQuery),
         ]);
         if (cancelled) {
           return;
         }
         setCache({
-          sessionId,
+          key: requestKey,
           reports: {
             overview,
             scope,
@@ -370,7 +380,7 @@ export default function CommercialView() {
           return;
         }
         setCache({
-          sessionId,
+          key: requestKey,
           reports: null,
           failure: toFailure(error),
           failedAtState: sessionState,
@@ -380,7 +390,7 @@ export default function CommercialView() {
     return () => {
       cancelled = true;
     };
-  }, [sessionId, terminal, sessionState, cache]);
+  }, [sessionId, terminal, sessionState, cache, key, query]);
 
   const meta = VIEWS.find((entry) => entry.id === "commercial");
 
@@ -435,7 +445,8 @@ export default function CommercialView() {
         >
           Commercial
         </h2>
-        <div className="mt-4">
+        <div className="mt-4 flex flex-col gap-4">
+          <FilterBar idPrefix="commercial" />
           <ErrorState
             title="The commercial results could not be loaded"
             message={failure.message}
@@ -464,7 +475,8 @@ export default function CommercialView() {
         >
           Commercial
         </h2>
-        <div className="mt-4 flex flex-col gap-2">
+        <div className="mt-4 flex flex-col gap-4">
+          <FilterBar idPrefix="commercial" />
           <LoadingState label="Loading the commercial results…" />
           <p className="text-sm text-muted-foreground">
             Session {session.sessionId.slice(0, 8)} is{" "}
@@ -510,10 +522,10 @@ export default function CommercialView() {
         <p className="mt-1 text-sm text-muted-foreground">
           Order-status scope: {reports.scope.statusScope}. Commercial amounts
           originate at order-item grain; per-order means divide by distinct
-          orders. Shared interactive filters belong to Phase 15 diagnostics, so
-          no filter controls are wired here.
+          orders.
         </p>
       </div>
+      <FilterBar idPrefix="commercial" />
       <section aria-labelledby="commercial-headline-heading">
         <h3
           id="commercial-headline-heading"

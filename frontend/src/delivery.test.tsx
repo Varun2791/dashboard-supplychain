@@ -609,12 +609,25 @@ describe("Phase-13 Delivery analytics", () => {
     ).toBeInTheDocument();
   });
 
-  it("exposes no interactive filters; filtering stays deferred", async () => {
+  it("exposes the shared analytics filters and refetches on change", async () => {
     renderSeeded(snapshotFor(SESSION_A, "READY"));
     goToDelivery();
     await screen.findAllByText("Late-shipment rate");
-    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
-    expect(deliverySection().querySelector("select")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Reset filters" }),
+    ).toBeDisabled();
+    const mode = screen.getByLabelText("Shipping mode");
+    expect(mode).toBeEnabled();
+    fireEvent.change(mode, { target: { value: "SAME_DAY" } });
+    await waitFor(() => {
+      expect(
+        fetchCalls().some(
+          (url) =>
+            url.includes("/kpis/delivery") &&
+            url.includes("shipping_mode=SAME_DAY"),
+        ),
+      ).toBe(true);
+    });
   });
 
   it("shows a terminal FAILED state without requesting KPIs", async () => {
@@ -691,7 +704,14 @@ describe("Phase-13 Delivery analytics", () => {
       expect(fetchCalls().length).toBeGreaterThan(0);
     });
     expect(screen.getByText("Overnight")).toBeInTheDocument();
-    expect(screen.queryByText("Standard Class")).not.toBeInTheDocument();
+    // Scope to the group table: the shared shipping-mode filter control
+    // legitimately also renders a "Standard Class" option label.
+    const modeTable = screen.getByRole("table", {
+      name: "Late-shipment rate by Shipping mode",
+    });
+    expect(
+      within(modeTable).queryByText("Standard Class"),
+    ).not.toBeInTheDocument();
   });
 
   it("reloads safely across away/back navigation", async () => {

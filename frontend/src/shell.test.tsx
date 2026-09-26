@@ -21,11 +21,11 @@ import UploadSession from "./components/UploadSession";
 
 expect.extend(matchers);
 
-const VIEW_PHASES: Array<[string, string]> = [["Diagnostics", "Phase 15"]];
+const VIEW_PHASES: Array<[string, string]> = [];
 // Data Quality left the stub set in Phase 11, Overview in Phase 12,
-// Delivery in Phase 13, and Commercial in Phase 14: they render real views
-// now (covered in their own test files), so they are asserted separately
-// below.
+// Delivery in Phase 13, Commercial in Phase 14, and Diagnostics in
+// Phase 15: they render real views now (covered in their own test files),
+// so they are asserted separately below. No future-view stubs remain.
 
 describe("Phase-10 application shell", () => {
   it("navigates six governed views with the upload view active first", () => {
@@ -38,7 +38,7 @@ describe("Phase-10 application shell", () => {
       "Overview",
       "Delivery",
       "Commercial",
-      ...VIEW_PHASES.map(([label]) => label),
+      "Diagnostics",
     ].map((label) => inNav.getByRole("button", { name: label }));
     expect(nav).toBeInTheDocument();
     expect(buttons).toHaveLength(6);
@@ -96,11 +96,20 @@ describe("Phase-10 application shell", () => {
     expect(screen.queryByText(/phase 14/i)).not.toBeInTheDocument();
   });
 
-  it("marks future views with their owning phase and no fabricated numbers", () => {
+  it("renders the real Diagnostics view instead of a phase stub", () => {
     render(<App />);
-    for (const [label, phase] of VIEW_PHASES) {
+    fireEvent.click(screen.getByRole("button", { name: "Diagnostics" }));
+    expect(
+      screen.getByRole("heading", { name: "Diagnostics" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("No dataset loaded")).toBeInTheDocument();
+    expect(screen.queryByText(/phase 15/i)).not.toBeInTheDocument();
+  });
+
+  it("shows no fabricated numbers on any view", () => {
+    render(<App />);
+    for (const [label] of VIEW_PHASES) {
       fireEvent.click(screen.getByRole("button", { name: label }));
-      expect(screen.getByText(new RegExp(`${phase}`))).toBeInTheDocument();
     }
     fireEvent.click(screen.getByRole("button", { name: "Commercial" }));
     expect(screen.queryByTestId(/kpi/i)).not.toBeInTheDocument();

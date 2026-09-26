@@ -185,3 +185,56 @@ export interface CleaningStep {
 export interface CleaningReportData {
   steps: CleaningStep[];
 }
+
+/**
+ * `GET /sessions/{id}/filter-options` payload (ADR-038, contract §3).
+ * Session-wide, non-cascading selectable domains: markets/regions from the
+ * canonical orders table, categories from the canonical items table.
+ * Sorted distinct non-empty display values; null/empty and UNKNOWN_FLAGGED
+ * are excluded by the producer. No counts, no PII.
+ */
+export interface FilterOptionsData {
+  dateRange: {
+    minOrderDate: string | null;
+    maxOrderDate: string | null;
+  };
+  markets: string[];
+  regions: string[];
+  categories: string[];
+}
+
+/**
+ * One sanitized canonical order (`GET /sessions/{id}/orders` row, ADR-038
+ * allowlist). Canonical `orders` fields only: identity, date basis, status,
+ * shipment truth, and stored whole-order commercial aggregates. No
+ * `customer_id`, no postal codes, no merch dims, no raw source fields.
+ */
+export interface OrderRow {
+  order_id: string;
+  order_timestamp: string | null;
+  order_status: string | null;
+  shipping_mode: string | null;
+  customer_segment: string | null;
+  destination_country: string | null;
+  destination_region: string | null;
+  destination_market: string | null;
+  scheduled_shipping_days: number | null;
+  actual_shipping_days: number | null;
+  shipment_outcome: string | null;
+  is_late: boolean | null;
+  line_count: number;
+  total_units: number;
+  gross_value: string;
+  discount_total: string;
+  net_value: string;
+  profit_total: string;
+}
+
+/** `GET /sessions/{id}/orders` payload (ADR-038, contract §3). */
+export interface OrdersData {
+  rows: OrderRow[];
+  page: {
+    nextCursor: string | null;
+    total: number;
+  };
+}

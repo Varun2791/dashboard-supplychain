@@ -36,6 +36,8 @@ import {
 } from "@/lib/kpi-format";
 import { KpiDefinition } from "@/components/patterns";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
+import FilterBar from "@/components/FilterBar";
+import { useAnalyticsFilters } from "@/lib/analytics-filters";
 import { useSession } from "@/lib/session";
 import { VIEWS } from "@/lib/view-registry";
 
@@ -387,10 +389,14 @@ function RegionPerformance({ region }: { region: KpiCommercialData }) {
  */
 export default function OverviewView() {
   const { session, sessionState } = useSession();
-  // Reports are immutable per session: an id-keyed cache plus the render
-  // guard below keeps reset (null) and FAILED from showing stale KPIs.
+  const { query, filterKey } = useAnalyticsFilters();
+  // Reports are immutable per session and filter combination: an id-keyed
+  // cache plus the render guard below keeps reset (null) and FAILED from
+  // showing stale KPIs. Changing any shared filter refetches under the new
+  // key; stale completions are ignored so an old filter state can never
+  // populate the current view.
   const [cache, setCache] = useState<{
-    sessionId: string;
+    key: string;
     reports: OverviewReports | null;
     failure: Failure | null;
     failedAtState: string | null;
@@ -398,8 +404,11 @@ export default function OverviewView() {
 
   const sessionId = session?.sessionId ?? null;
   const terminal = sessionState === "FAILED";
+  const key = sessionId === null ? null : `${sessionId}|${filterKey}`;
   const visible =
-    cache !== null && cache.sessionId === sessionId && !terminal ? cache : null;
+    cache !== null && key !== null && cache.key === key && !terminal
+      ? cache
+      : null;
   const reports = visible?.reports ?? null;
   const failure = visible?.failure ?? null;
 
@@ -407,33 +416,35 @@ export default function OverviewView() {
   // session state advances. Stale completions are ignored so session A can
   // never populate session B.
   useEffect(() => {
-    if (sessionId === null || terminal) {
+    if (sessionId === null || terminal || key === null) {
       return;
     }
-    if (cache?.sessionId === sessionId && cache.reports !== null) {
+    if (cache?.key === key && cache.reports !== null) {
       return;
     }
     if (
-      cache?.sessionId === sessionId &&
+      cache?.key === key &&
       cache.failure !== null &&
       cache.failedAtState === sessionState
     ) {
       return;
     }
     let cancelled = false;
+    const requestKey = key;
+    const requestQuery = query;
     void (async () => {
       try {
         const [overview, delivery, trend, region] = await Promise.all([
-          fetchKpisOverview(sessionId),
-          fetchKpisDelivery(sessionId, null),
-          fetchKpisCommercial(sessionId, "order_month"),
-          fetchKpisCommercial(sessionId, "destination_region"),
+          fetchKpisOverview(sessionId, requestQuery),
+          fetchKpisDelivery(sessionId, null, requestQuery),
+          fetchKpisCommercial(sessionId, "order_month", requestQuery),
+          fetchKpisCommercial(sessionId, "destination_region", requestQuery),
         ]);
         if (cancelled) {
           return;
         }
         setCache({
-          sessionId,
+          key: requestKey,
           reports: { overview, delivery, trend, region },
           failure: null,
           failedAtState: null,
@@ -448,7 +459,7 @@ export default function OverviewView() {
           return;
         }
         setCache({
-          sessionId,
+          key: requestKey,
           reports: null,
           failure: toFailure(error),
           failedAtState: sessionState,
@@ -458,7 +469,7 @@ export default function OverviewView() {
     return () => {
       cancelled = true;
     };
-  }, [sessionId, terminal, sessionState, cache]);
+  }, [sessionId, terminal, sessionState, cache, key, query]);
 
   const meta = VIEWS.find((entry) => entry.id === "overview");
 
@@ -513,7 +524,8 @@ export default function OverviewView() {
         >
           Overview
         </h2>
-        <div className="mt-4">
+        <div className="mt-4 flex flex-col gap-4">
+          <FilterBar idPrefix="overview" />
           <ErrorState
             title="The headline results could not be loaded"
             message={failure.message}
@@ -542,7 +554,8 @@ export default function OverviewView() {
         >
           Overview
         </h2>
-        <div className="mt-4 flex flex-col gap-2">
+        <div className="mt-4 flex flex-col gap-4">
+          <FilterBar idPrefix="overview" />
           <LoadingState label="Loading the headline results…" />
           <p className="text-sm text-muted-foreground">
             Session {session.sessionId.slice(0, 8)} is{" "}
@@ -588,6 +601,7 @@ export default function OverviewView() {
           {reports.delivery.exclusions}
         </p>
       </div>
+      <FilterBar idPrefix="overview" />
       <section aria-labelledby="overview-cards-heading">
         <h3 id="overview-cards-heading" className="text-base font-semibold">
           Headline results

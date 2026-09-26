@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useSession } from "@/lib/session";
+import { AnalyticsFilterProvider } from "@/lib/analytics-filters";
 import { ActiveView } from "@/components/views";
 import { VIEWS } from "@/lib/view-registry";
 import type { DashboardView } from "@/lib/view-registry";
@@ -75,7 +76,9 @@ export default function AppShell({
         </nav>
       </header>
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6">
-        <ActiveView view={view} onSessionChange={onSessionChange} />
+        <AnalyticsFilterProvider>
+          <ActiveView view={view} onSessionChange={onSessionChange} />
+        </AnalyticsFilterProvider>
       </main>
       <footer className="border-t">
         <p className="mx-auto w-full max-w-6xl px-4 py-3 text-xs text-muted-foreground sm:px-6">
