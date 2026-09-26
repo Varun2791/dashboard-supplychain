@@ -56,6 +56,21 @@ export const CARD_MEANINGS: Record<string, string> = {
     "Share of shipment-eligible orders arriving after schedule.",
   "kpi.ship.on_schedule_rate":
     "Share of shipment-eligible orders early or exactly on schedule.",
+  "kpi.ship.early_rate":
+    "Share of shipment-eligible orders arriving before schedule.",
+  "kpi.ship.exact_rate":
+    "Share of shipment-eligible orders arriving exactly on schedule.",
+  "kpi.ship.avg_actual_days":
+    "Mean actual shipping days across eligible orders with recorded days.",
+  "kpi.ship.avg_scheduled_days":
+    "Mean scheduled shipping days across eligible orders.",
+  "kpi.ship.variance_days":
+    "Mean schedule variance in days; negative means ahead of schedule.",
+  "kpi.orders.strict_cancel_rate":
+    "Share of orders with order status strictly cancelled.",
+  "kpi.orders.fraud_rate": "Share of orders flagged as suspected fraud.",
+  "kpi.orders.blocked_rate":
+    "Share of orders with the shipping-blocked/cancelled shipment outcome.",
   "kpi.orders.count": "Distinct orders in scope.",
   "kpi.orders.shipment_eligible_count":
     "Orders usable for shipment adherence; shipping-cancelled excluded.",

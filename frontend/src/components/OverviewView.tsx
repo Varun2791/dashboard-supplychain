@@ -84,9 +84,13 @@ function findKpi(kpis: KpiResult[], id: string): KpiResult | null {
   return kpis.find((kpi) => kpi.id === id) ?? null;
 }
 
-function KpiCard({ kpi }: { kpi: KpiResult }) {
+export function KpiCard({ kpi }: { kpi: KpiResult }) {
   const unavailable = kpi.status !== "ok" || kpi.value === null;
   const value: number | string | null = kpi.value;
+  const missingNote =
+    kpi.missingDataCount > 0
+      ? `${kpi.missingDataCount} rows excluded for missing fields`
+      : null;
   return (
     <div className="flex flex-col gap-1 rounded-lg border p-4">
       <p className="text-sm font-medium">{kpi.label}</p>
@@ -94,14 +98,17 @@ function KpiCard({ kpi }: { kpi: KpiResult }) {
         <p className="text-sm text-muted-foreground" role="status">
           Unavailable
           {kpi.reason !== null && kpi.reason !== "" ? ` — ${kpi.reason}` : ""}
-          {kpi.missingDataCount > 0
-            ? ` (${kpi.missingDataCount} rows excluded for missing fields)`
-            : ""}
+          {missingNote !== null ? ` (${missingNote})` : ""}
         </p>
       ) : (
-        <p className="text-2xl font-semibold tracking-tight">
-          {formatKpiValue(kpi.id, value)}
-        </p>
+        <>
+          <p className="text-2xl font-semibold tracking-tight">
+            {formatKpiValue(kpi.id, value)}
+          </p>
+          {missingNote !== null ? (
+            <p className="text-sm text-muted-foreground">({missingNote})</p>
+          ) : null}
+        </>
       )}
       <KpiDefinition
         term={kpi.label}

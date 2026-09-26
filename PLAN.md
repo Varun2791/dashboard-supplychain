@@ -468,7 +468,7 @@ Suggested commit: `feat(dashboard): add executive overview`
 
 ## Phase 13 — Delivery analytics
 
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
 ### Objective
 
@@ -476,18 +476,20 @@ Answer: where and under which shipping conditions do schedule failures occur?
 
 ### Tasks
 
-- [ ] Break down late/on-schedule outcomes by shipping mode.
-- [ ] Add actual versus scheduled days and variance.
-- [ ] Add region, market, category, and time breakdowns.
-- [ ] Keep cancelled and suspected-fraud outcomes separate.
-- [ ] Support order-level drilldown without personal fields.
-- [ ] Explain eligible-population exclusions.
+- [x] Break down late/on-schedule outcomes by shipping mode. — `DeliveryView` mode section: backend `by=shipping_mode` groups as a late-rate bar chart plus a full outcome/count/eligible/days table; governed mode keys verbatim; association-only copy.
+- [x] Add actual versus scheduled days and variance. — Headline cards for average actual/scheduled days and schedule variance (backend means, 2-dp) plus per-group day columns; no frontend means or differences.
+- [x] Add region, market, category, and time breakdowns. — Backend `by=destination_region` (chart + table), `by=destination_market`, `by=category_name`, and `by=order_month` (order-date basis) group tables; backend group order preserved, no ranking or best/worst labels.
+- [x] Keep cancelled and suspected-fraud outcomes separate. — Dedicated context cards (strict cancellation, suspected-fraud, shipping-blocked rates) with never-merged, never-implies-fraud copy; cancelled shipments never counted as non-late.
+- [x] Support order-level drilldown without personal fields. — Group-level order-grain drilldown: per-group eligible/count tables reconcile to the headline eligible total (tested). Row-level drilldown UI plus the `/orders` endpoint stay deferred to Phase 15 per the accepted Phase-9 deferral; the view states this honestly.
+- [x] Explain eligible-population exclusions. — Backend `eligibleOrders` + `exclusions` rendered as scope context with the null-lateness rule stated.
 
 ### Exit criteria
 
-- All delivery rates use distinct eligible orders.
-- No cancelled shipment is classified as non-late.
-- Drilldown totals reconcile with summaries.
+- [x] All delivery rates use distinct eligible orders. — Rates and denominators come from the backend order-grain engine (one order contributes at most once); per-group eligible counts read from backend denominators, never derived.
+- [x] No cancelled shipment is classified as non-late. — Eligible-only rates, cancelled `is_late=null` derivation stated, tested negatives.
+- [x] Drilldown totals reconcile with summaries. — Mode-group eligible counts sum to the headline eligible total in tests; group tables carry the same backend values as the headline.
+
+Evidence: `make check` green (backend 275 passed + 1 env-gated skip, untouched; frontend 98 passed — 20 new Delivery tests + 1 shell real-view test, plus a Phase-10 stub fidelity fix so lifetime tests reflect KPI 409 gating; Ruff, format, mypy strict, tsc, ESLint 0 errors, Prettier, `vite build` green), axe-clean loaded Delivery, synthetic browser smoke (upload → Delivery loading/gate → away/back → reset, 1200/428px). No backend changes; no shipment classification/eligibility/rate math in TypeScript; shared filters and row drilldown stay deferred to Phase 15, commercial detail to Phase 14.
 
 Suggested commit: `feat(dashboard): add shipment performance analytics`
 

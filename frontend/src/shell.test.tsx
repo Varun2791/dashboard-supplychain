@@ -22,13 +22,12 @@ import UploadSession from "./components/UploadSession";
 expect.extend(matchers);
 
 const VIEW_PHASES: Array<[string, string]> = [
-  ["Delivery", "Phase 13"],
   ["Commercial", "Phase 14"],
   ["Diagnostics", "Phase 15"],
 ];
-// Data Quality left the stub set in Phase 11 and Overview in Phase 12: they
-// render real views now (covered in their own test files), so they are
-// asserted separately below.
+// Data Quality left the stub set in Phase 11, Overview in Phase 12, and
+// Delivery in Phase 13: they render real views now (covered in their own
+// test files), so they are asserted separately below.
 
 describe("Phase-10 application shell", () => {
   it("navigates six governed views with the upload view active first", () => {
@@ -39,6 +38,7 @@ describe("Phase-10 application shell", () => {
       "Upload",
       "Data Quality",
       "Overview",
+      "Delivery",
       ...VIEW_PHASES.map(([label]) => label),
     ].map((label) => inNav.getByRole("button", { name: label }));
     expect(nav).toBeInTheDocument();
@@ -77,13 +77,23 @@ describe("Phase-10 application shell", () => {
     expect(screen.queryByText(/phase 12/i)).not.toBeInTheDocument();
   });
 
+  it("renders the real Delivery view instead of a phase stub", () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Delivery" }));
+    expect(
+      screen.getByRole("heading", { name: "Delivery" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("No dataset loaded")).toBeInTheDocument();
+    expect(screen.queryByText(/phase 13/i)).not.toBeInTheDocument();
+  });
+
   it("marks future views with their owning phase and no fabricated numbers", () => {
     render(<App />);
     for (const [label, phase] of VIEW_PHASES) {
       fireEvent.click(screen.getByRole("button", { name: label }));
       expect(screen.getByText(new RegExp(`${phase}`))).toBeInTheDocument();
     }
-    fireEvent.click(screen.getByRole("button", { name: "Delivery" }));
+    fireEvent.click(screen.getByRole("button", { name: "Commercial" }));
     expect(screen.queryByTestId(/kpi/i)).not.toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/57\.3|42\.7|33,054,402/);
   });
@@ -391,15 +401,32 @@ class LifetimeXHR {
 
 /** Route stubbed fetch calls by URL suffix; DELETE removes the session. */
 function stubLifetimeApi(statusNext: () => unknown): void {
+  // KPI endpoints answer 409 NOT_READY here: these lifetime tests exercise
+  // session/badge preservation across navigation (not KPI content), and the
+  // real backend gates every KPI endpoint behind READY the same way.
+  const kpiNotReady = {
+    data: null,
+    meta: {},
+    error: {
+      code: "NOT_READY",
+      stage: "ANALYZING",
+      message: "KPI analysis has not completed yet.",
+      details: {},
+    },
+  };
   vi.stubGlobal(
     "fetch",
     vi.fn((input: unknown, init?: { method?: string }) => {
       const url = String(input);
       let body: unknown;
+      let status = 200;
       if (init?.method === "DELETE") {
         body = { data: { deleted: true }, meta: {}, error: null };
       } else if (url.endsWith("/status")) {
         body = statusNext();
+      } else if (url.includes("/kpis/")) {
+        body = kpiNotReady;
+        status = 409;
       } else if (url.endsWith("/schema")) {
         body = LIFETIME_SCHEMA;
       } else if (url.endsWith("/profile")) {
@@ -413,7 +440,7 @@ function stubLifetimeApi(statusNext: () => unknown): void {
       }
       return Promise.resolve(
         new Response(JSON.stringify(body), {
-          status: 200,
+          status,
           headers: { "Content-Type": "application/json" },
         }),
       );

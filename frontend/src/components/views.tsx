@@ -4,6 +4,7 @@ import type { SessionSnapshot } from "@/lib/session";
 import { VIEWS } from "@/lib/view-registry";
 import type { DashboardView, ViewMeta } from "@/lib/view-registry";
 import DataQualityView from "@/components/DataQualityView";
+import DeliveryView from "@/components/DeliveryView";
 import OverviewView from "@/components/OverviewView";
 import UploadSession from "@/components/UploadSession";
 
@@ -54,6 +55,8 @@ export function ActiveView({
         <DataQualityView />
       ) : view === "overview" ? (
         <OverviewView />
+      ) : view === "delivery" ? (
+        <DeliveryView />
       ) : view !== "upload" && meta !== undefined ? (
         <FutureView meta={meta} />
       ) : null}
