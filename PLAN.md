@@ -526,7 +526,7 @@ Suggested commit: `feat(dashboard): add commercial and profitability analytics`
 
 ## Phase 15 — Diagnostics and interactions
 
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
 ### Objective
 
@@ -534,18 +534,20 @@ Let users move from a poor KPI to the combinations and records associated with i
 
 ### Tasks
 
-- [ ] Add shared date, market, region, category, shipping-mode, status, and outcome filters.
-- [ ] Define filter interaction and reset behavior.
-- [ ] Add multi-dimensional diagnostic ranking.
-- [ ] Add safe order-level drilldown.
-- [ ] Add empty-result and zero-eligible-population behavior.
-- [ ] Preserve selected filters across relevant views.
+- [x] Add shared date, market, region, category, shipping-mode, status, and outcome filters. — ADR-038 8-filter set (`from`/`to`/`market`/`region`/`category`/`shipping_mode`/`order_status`/`shipment_outcome`), single-select + All, one shared state (`frontend/src/lib/analytics-filters.tsx` + `FilterBar.tsx`).
+- [x] Define filter interaction and reset behavior. — Session-keyed persistence across analytics views; reset returns analytics to unfiltered scope and restarts order pagination; Data Quality stays filter-independent.
+- [x] Add multi-dimensional diagnostic ranking. — ADR-039 two fixed presentation-only rankings (`kpi.ship.late_rate`, `kpi.orders.loss_making_rate`) in `DiagnosticsView.tsx` + `lib/diagnostics-rank.ts`.
+- [x] Add safe order-level drilldown. — `GET /sessions/{id}/orders` backend surface plus paginated sanitized 18-field drilldown; opaque cursor; no excluded customer fields.
+- [x] Add empty-result and zero-eligible-population behavior. — `rows=[]`/`total=0` normal empty state with reset path; zero-eligible shipment rates unavailable, never 0%.
+- [x] Preserve selected filters across relevant views. — Shared provider above Overview/Delivery/Commercial/Diagnostics; cleared on session replacement and reset.
 
 ### Exit criteria
 
-- Filtered headline values reconcile with filtered detail.
-- Diagnostics describe association, not causation.
-- No interaction exposes excluded customer fields.
+- [x] Filtered headline values reconcile with filtered detail. — Order-population parity under identical filters; governed cross-grain qualification: commercial item-grain totals need not equal order drilldown sums under merchandise filters for multi-merchandise orders (disclosed in UI, ADR-038).
+- [x] Diagnostics describe association, not causation.
+- [x] No interaction exposes excluded customer fields.
+
+Evidence: backend diagnostic query surfaces in `7a0607b` (filter-options + orders); shared filters/diagnostics/drilldown UI in `ed92735`; final acceptance: 6/6 tasks and 3/3 exit criteria PASS with no material defects; CI 36261898053 successful (backend 315 passed + 1 env-gated skip, frontend 152 passed, build green). Diagnostics are association-only throughout.
 
 Suggested commit: `feat(diagnostics): add cross-filtering and operational drilldown`
 
