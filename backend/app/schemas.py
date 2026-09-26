@@ -750,3 +750,47 @@ class OrdersResponse(BaseModel):
     data: OrdersData
     meta: EnvelopeMeta
     error: None = None
+
+
+class ExportRequest(BaseModel):
+    """`POST /sessions/{id}/exports` body (ADR-040, contract §3).
+
+    `filters` keys are validated against the 8-key public V1 vocabulary
+    in the export engine (unknown keys, `department`/`customer_segment`,
+    and any non-empty filter on a report kind all fail with 422
+    INVALID_FILTER_VALUE). Values stay `Any` here so non-string inputs
+    reach that governed validation instead of failing generic parsing.
+    """
+
+    kind: str
+    filters: Any | None = None
+
+
+class ExportSidecarIdentity(BaseModel):
+    """Identity of the CSV `.meta.json` sidecar (CSV kinds only)."""
+
+    filename: str
+    bytes: int
+    sha256: str
+
+
+class ExportData(BaseModel):
+    """`POST /sessions/{id}/exports` payload (contract §3 exactly).
+
+    Top-level identity always refers to the PRIMARY artifact;
+    `metadata` refers only to the sidecar (`null` for JSON reports).
+    """
+
+    exportId: str
+    filename: str
+    bytes: int
+    sha256: str
+    metadata: ExportSidecarIdentity | None = None
+
+
+class ExportResponse(BaseModel):
+    """Success envelope for a published export (`201`)."""
+
+    data: ExportData
+    meta: EnvelopeMeta
+    error: None = None

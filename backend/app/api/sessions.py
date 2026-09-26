@@ -17,9 +17,11 @@ from datetime import date, datetime
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, BackgroundTasks, File, Query, Request, UploadFile
+from fastapi.responses import Response
 
 from app import sessions as session_store
 from app.config import settings
+from app.exports import CSV_KINDS, EXPORT_KINDS, KIND_QUALITY_REPORT
 from app.ingestion import (
     SNIFF_LIMIT_BYTES,
     check_duplicate_headers,
@@ -35,6 +37,7 @@ from app.ingestion_errors import (
     EMPTY_FILE,
     FILE_TOO_LARGE,
     INTERNAL_STAGE_ERROR,
+    INVALID_EXPORT_KIND,
     INVALID_EXTENSION,
     INVALID_FILTER_VALUE,
     INVALID_GROUPING,
@@ -47,6 +50,7 @@ from app.ingestion_errors import (
     SESSION_NOT_FOUND,
     STAGE_ANALYZING,
     STAGE_CLEANING,
+    STAGE_EXPORT,
     STAGE_PROFILING,
     STAGE_VALIDATING,
     IngestionError,
@@ -68,6 +72,10 @@ from app.schemas import (
     DataQualitySummary,
     EnvelopeMeta,
     ErrorResponse,
+    ExportData,
+    ExportRequest,
+    ExportResponse,
+    ExportSidecarIdentity,
     FilterOptionsData,
     FilterOptionsDateRange,
     FilterOptionsResponse,
@@ -1301,4 +1309,186 @@ async def session_orders(
             filters=filters.as_meta(),
         ),
         error=None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase-16 governed exports (ADR-033/040; no KPI/business logic here: the
+# `app.exports` domain service projects canonical allowlists, validates
+# the 8-key filter vocabulary, enforces DQ-PRIVACY-003, and publishes
+# atomic two-file logical records)
+# ---------------------------------------------------------------------------
+
+
+def _export_filename_header(filename: str) -> str:
+    """Server-generated download name: safe alphabet only, never passthrough."""
+    if (
+        not filename
+        or '"' in filename
+        or "\r" in filename
+        or "\n" in filename
+        or "/" in filename
+        or "\\" in filename
+    ):  # pragma: no cover - filenames are server-generated safe
+        raise IngestionError(
+            INTERNAL_STAGE_ERROR,
+            STAGE_EXPORT,
+            "The export filename is not servable. Build the export again.",
+            500,
+            {},
+        )
+    return f'attachment; filename="{filename}"'
+
+
+def _failed_session_error(
+    manifest: SessionManifest, session_id: str, default_stage: str
+) -> IngestionError:
+    """Re-surface the stored terminal error (existing failed-session behavior)."""
+    stored = manifest.error
+    code = stored.code if stored is not None else INTERNAL_STAGE_ERROR
+    return IngestionError(
+        code,
+        stored.stage if stored is not None else default_stage,
+        stored.message
+        if stored is not None
+        else "Processing could not be completed. Upload the file again.",
+        _TERMINAL_STATUS.get(code, 500),
+        dict(stored.details) if stored is not None else {},
+        session_id=session_id,
+        session_state=manifest.state,
+    )
+
+
+@router.post(
+    "/sessions/{session_id}/exports", response_model=ExportResponse, status_code=201
+)
+async def session_create_export(session_id: str, body: ExportRequest) -> ExportResponse:
+    """Build one approved export artifact (`201`; READY-gated, atomic)."""
+    from app import exports as export_service
+
+    if body.kind not in EXPORT_KINDS:
+        raise IngestionError(
+            INVALID_EXPORT_KIND,
+            STAGE_EXPORT,
+            "Unknown export kind. Use one of the four approved exports.",
+            400,
+            {"kind": body.kind},
+            session_id=session_id,
+        )
+    manifest, _, _ = _kpi_or_raise(session_id)
+    filters = export_service.parse_export_filters(
+        body.kind, body.filters, session_id, manifest.state
+    )
+    manifest_paths = session_store.session_paths(settings.session_root, session_id)
+    now = session_store.utcnow_naive_iso()
+    provenance = export_service.build_provenance(
+        kind=body.kind, manifest=manifest, filters=filters, generated_at=now
+    )
+    if body.kind in CSV_KINDS:
+        dataset = export_service.build_csv_dataset(
+            body.kind, manifest_paths, filters, session_id, manifest.state
+        )
+        primary = export_service.serialize_csv(dataset.header, dataset.rows)
+        sidecar = export_service.serialize_report(provenance)
+        primary_filename, sidecar_filename = export_service.export_filenames(
+            manifest.filenameSafe, body.kind, "csv", now
+        )
+        assert sidecar_filename is not None
+    elif body.kind == KIND_QUALITY_REPORT:
+        payload = export_service.build_quality_report(
+            manifest_paths, provenance, session_id, manifest.state
+        )
+        primary = export_service.serialize_report(payload)
+        primary_filename, sidecar_filename = export_service.export_filenames(
+            manifest.filenameSafe, body.kind, "json", now
+        )
+        sidecar = None
+    else:  # KIND_CLEANING_REPORT (kind membership validated above)
+        payload = export_service.build_cleaning_report(
+            manifest_paths, provenance, session_id, manifest.state
+        )
+        primary = export_service.serialize_report(payload)
+        primary_filename, sidecar_filename = export_service.export_filenames(
+            manifest.filenameSafe, body.kind, "json", now
+        )
+        sidecar = None
+    published = export_service.publish_export(
+        manifest_paths,
+        kind=body.kind,
+        manifest=manifest,
+        filters=filters,
+        primary=primary,
+        primary_filename=primary_filename,
+        sidecar=sidecar,
+        sidecar_filename=sidecar_filename,
+        generated_at=now,
+    )
+    metadata = (
+        ExportSidecarIdentity(
+            filename=published.metadata_filename or "",
+            bytes=len(published.metadata_content or b""),
+            sha256=published.metadata_sha256 or "",
+        )
+        if published.metadata_content is not None
+        else None
+    )
+    return ExportResponse(
+        data=ExportData(
+            exportId=published.export_id,
+            filename=published.filename,
+            bytes=len(published.content),
+            sha256=published.sha256,
+            metadata=metadata,
+        ),
+        meta=_base_meta(
+            session_id=session_id,
+            session_state=manifest.state,
+            filters=export_service.filters_applied_map(filters)
+            if body.kind not in export_service.REPORT_KINDS
+            else {},
+        ),
+        error=None,
+    )
+
+
+@router.get("/sessions/{session_id}/exports/{export_id}")
+async def session_download_export(session_id: str, export_id: str) -> Response:
+    """Serve persisted primary export bytes (never regenerated)."""
+    from app import exports as export_service
+
+    manifest, paths = _resolve_session(session_id)
+    if manifest.state == STATE_FAILED:
+        raise _failed_session_error(manifest, session_id, STAGE_EXPORT)
+    content, record = export_service.read_export_bytes(
+        paths, export_id, sidecar=False, session_id=session_id, state=manifest.state
+    )
+    media = "text/csv" if str(record.get("kind")) in CSV_KINDS else "application/json"
+    return Response(
+        content=content,
+        media_type=media,
+        headers={
+            "Content-Disposition": _export_filename_header(str(record.get("filename")))
+        },
+    )
+
+
+@router.get("/sessions/{session_id}/exports/{export_id}/metadata")
+async def session_download_export_metadata(session_id: str, export_id: str) -> Response:
+    """Serve the persisted CSV `.meta.json` sidecar (none for JSON reports)."""
+    from app import exports as export_service
+
+    manifest, paths = _resolve_session(session_id)
+    if manifest.state == STATE_FAILED:
+        raise _failed_session_error(manifest, session_id, STAGE_EXPORT)
+    content, record = export_service.read_export_bytes(
+        paths, export_id, sidecar=True, session_id=session_id, state=manifest.state
+    )
+    return Response(
+        content=content,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": _export_filename_header(
+                str(record.get("metadataFilename"))
+            )
+        },
     )

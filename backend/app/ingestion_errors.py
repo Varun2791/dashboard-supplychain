@@ -32,6 +32,9 @@ CUSTOMER_INVARIANCE_CONFLICT = "CUSTOMER_INVARIANCE_CONFLICT"
 INVALID_FILTER_VALUE = "INVALID_FILTER_VALUE"
 INVALID_GROUPING = "INVALID_GROUPING"
 INVALID_PAGINATION = "INVALID_PAGINATION"
+INVALID_EXPORT_KIND = "INVALID_EXPORT_KIND"
+EXPORT_BLOCKED = "EXPORT_BLOCKED"
+EXPORT_NOT_FOUND = "EXPORT_NOT_FOUND"
 
 # Stage reported for every synchronous ingestion guard (docs/api-contract.md).
 STAGE_VALIDATING = "VALIDATING"
@@ -47,6 +50,9 @@ STAGE_CANONICALIZING = "CANONICALIZING"
 
 # Stage reported for KPI-analysis failures (Phase 9).
 STAGE_ANALYZING = "ANALYZING"
+
+# Stage reported for export serving failures (Phase 16; api-contract section 4).
+STAGE_EXPORT = "EXPORT"
 
 
 class IngestionError(Exception):
