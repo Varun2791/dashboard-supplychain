@@ -22,21 +22,24 @@ import UploadSession from "./components/UploadSession";
 expect.extend(matchers);
 
 const VIEW_PHASES: Array<[string, string]> = [
-  ["Data Quality", "Phase 11"],
   ["Overview", "Phase 12"],
   ["Delivery", "Phase 13"],
   ["Commercial", "Phase 14"],
   ["Diagnostics", "Phase 15"],
 ];
+// Data Quality left the stub set in Phase 11: it renders the real view now
+// (covered in data-quality.test.tsx), so it is asserted separately below.
 
 describe("Phase-10 application shell", () => {
   it("navigates six governed views with the upload view active first", () => {
     render(<App />);
     const nav = screen.getByRole("navigation", { name: /dashboard views/i });
     const inNav = within(nav);
-    const buttons = ["Upload", ...VIEW_PHASES.map(([label]) => label)].map(
-      (label) => inNav.getByRole("button", { name: label }),
-    );
+    const buttons = [
+      "Upload",
+      "Data Quality",
+      ...VIEW_PHASES.map(([label]) => label),
+    ].map((label) => inNav.getByRole("button", { name: label }));
     expect(nav).toBeInTheDocument();
     expect(buttons).toHaveLength(6);
     expect(inNav.getByRole("button", { name: "Upload" })).toHaveAttribute(
@@ -51,6 +54,16 @@ describe("Phase-10 application shell", () => {
     expect(
       screen.getByRole("heading", { name: "Delivery" }),
     ).toBeInTheDocument();
+  });
+
+  it("renders the real Data Quality view instead of a phase stub", () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Data Quality" }));
+    expect(
+      screen.getByRole("heading", { name: "Data Quality" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("No dataset loaded")).toBeInTheDocument();
+    expect(screen.queryByText(/phase 11/i)).not.toBeInTheDocument();
   });
 
   it("marks future views with their owning phase and no fabricated numbers", () => {

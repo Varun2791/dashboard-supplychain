@@ -401,7 +401,7 @@ Create a coherent, accessible shell before adding analytical pages.
 - [x] Navigation and controls meet accessibility checks. — `vitest-axe` on shell + future view; keyboard-focusable nav verified in tests.
 - [x] Components do not contain hardcoded DataCo metrics. — No KPI numbers in shell/views/patterns (test asserts absence of fabricated rate/value patterns); the only reference-file mention remains the pre-existing governed upload copy.
 
-Evidence: `make check` green (backend 275 passed + 1 env-gated skip, untouched; frontend 38 passed — 11 new shell/pattern tests; Ruff, format, mypy strict, tsc, ESLint 0 errors, Prettier, `vite build` green), real-browser smoke via ego-browser against the built bundle (dashboard heading, labelled nav, Delivery stub with Phase-13 copy, zero horizontal overflow at desktop and 428px widths). No backend changes; no KPI fetching or formulas in TypeScript; DQ/Overview/Delivery/Commercial views stay deferred to Phases 11–14.
+Evidence: `make check` green (backend 275 passed + 1 env-gated skip, untouched; frontend 43 passed — 11 shell/pattern tests plus 5 session-lifetime regression tests; Ruff, format, mypy strict, tsc, ESLint 0 errors, Prettier, `vite build` green), real-browser smoke via ego-browser against the built bundle (dashboard heading, labelled nav, Delivery stub with Phase-13 copy, zero horizontal overflow at desktop and 428px widths; post-correction smoke additionally verified READY→away→back session retention with synthetic data). No backend changes; no KPI fetching or formulas in TypeScript; DQ view lands in Phase 11; Overview/Delivery/Commercial stay deferred to Phases 12–14.
 
 Suggested commit: `feat(ui): add accessible dashboard shell and design system`
 
@@ -409,7 +409,7 @@ Suggested commit: `feat(ui): add accessible dashboard shell and design system`
 
 ## Phase 11 — Data-quality experience
 
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
 ### Objective
 
@@ -417,19 +417,21 @@ Make data trust and cleaning evidence a first-class user workflow.
 
 ### Tasks
 
-- [ ] Show source dimensions and detected grain.
-- [ ] Show required/optional field coverage.
-- [ ] Show issues by severity and treatment.
-- [ ] Show before/after counts without implying all issues were fixed.
-- [ ] Provide field-level detail and cleaning-log preview.
-- [ ] Explain excluded privacy and redundant fields.
-- [ ] Allow approved cleaned-data and quality-report export.
+- [x] Show source dimensions and detected grain. — `DataQualityView` source-profile section renders backend `rows`/`columns`/`grain` plus duplicates and order/product/customer invariance summaries (counts only); no order counts invented.
+- [x] Show required/optional field coverage. — Schema-report mapping classes drive required-mapped counts, optional-mapped counts, and the missing-critical alert; counts come from the API, never recomputed rule logic.
+- [x] Show issues by severity and treatment. — Backend summary plus ERROR/WARNING/INFO groups with rule ID, affected count, treatment, and blocked stage; severity/blocking semantics come from the report.
+- [x] Show before/after counts without implying all issues were fixed. — Cleaning audit log renders every step's detected/fixed/flagged/excluded/unchanged accounting with presentational totals and explicit "detected is not the same as fixed" copy.
+- [x] Provide field-level detail and cleaning-log preview. — Missingness and cardinality tables per field (counts only), order-invariance conflicts by field, and the full step-level cleaning log with reasons; no raw values or rows reconstructed.
+- [x] Explain excluded privacy and redundant fields. — Excluded/redundant/unknown mapping classes rendered with governed explanations in native disclosures; header names only, never values.
+- [x] Allow approved cleaned-data and quality-report export. — Honest Phase-16 deferral: no backend export endpoints exist yet (Phase 16 owns `POST /exports` implementation), so the view states the approved kinds and that raw data is never exportable instead of shipping a fake download.
 
 ### Exit criteria
 
-- A user can explain what changed and what remains flagged.
-- Counts reconcile with backend profiling and cleaning results.
-- Exports contain no excluded personal fields.
+- [x] A user can explain what changed and what remains flagged. — Cleaning steps carry reasons and per-outcome counts; flagged/blocked issues stay visible with recoverable-gate explanations.
+- [x] Counts reconcile with backend profiling and cleaning results. — Every number renders verbatim from the profile/data-quality/cleaning/schema payloads; tests assert sentinel counts end to end through the mocked contract.
+- [x] Exports contain no excluded personal fields. — No export artifact exists in Phase 11 (nothing to leak); the privacy gate remains backend-owned for Phase 16.
+
+Evidence: `make check` green (backend 275 passed + 1 env-gated skip, untouched; frontend 57 passed — 14 new Phase-11 view tests; Ruff, format, mypy strict, tsc, ESLint 0 errors, Prettier, `vite build` green), axe-clean loaded report, synthetic browser smoke (upload → Data Quality → report, away/back, reset). No backend changes; no DQ predicate reimplemented in TypeScript; no scores/grades/waivers invented; Overview/Delivery/Commercial/Diagnostics stay deferred to Phases 12–15 and exports to Phase 16.
 
 Suggested commit: `feat(data-quality): add transparent quality and cleaning report`
 

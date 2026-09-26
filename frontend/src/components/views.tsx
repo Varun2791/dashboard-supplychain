@@ -3,6 +3,7 @@ import { useSession } from "@/lib/session";
 import type { SessionSnapshot } from "@/lib/session";
 import { VIEWS } from "@/lib/view-registry";
 import type { DashboardView, ViewMeta } from "@/lib/view-registry";
+import DataQualityView from "@/components/DataQualityView";
 import UploadSession from "@/components/UploadSession";
 
 function FutureView({ meta }: { meta: ViewMeta }) {
@@ -48,7 +49,9 @@ export function ActiveView({
       <div hidden={view !== "upload"} className="mx-auto w-full max-w-2xl">
         <UploadSession onSessionChange={onSessionChange} />
       </div>
-      {view !== "upload" && meta !== undefined ? (
+      {view === "data-quality" ? (
+        <DataQualityView />
+      ) : view !== "upload" && meta !== undefined ? (
         <FutureView meta={meta} />
       ) : null}
     </>

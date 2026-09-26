@@ -48,18 +48,51 @@ export interface SchemaReportData {
   missingCritical: string[];
 }
 
+/** Per-field missing-value statistics (contract shape; counts only). */
+export interface ProfileMissingness {
+  field: string;
+  source: string;
+  missing: number;
+  total: number;
+  rate: number;
+  parseFailures: number;
+}
+
+/** Per-field distinct-value count (contract shape; counts only). */
+export interface ProfileCardinality {
+  field: string;
+  source: string;
+  distinct: number;
+}
+
+/** Order-grain consistency summary (contract shape; counts only). */
+export interface ProfileInvarianceConflicts {
+  ordersChecked: number;
+  conflictingOrders: number;
+  byField: Array<{ field: string; conflictingOrders: number }>;
+}
+
+/** Product/customer-grain consistency summary (contract shape; counts only). */
+export interface ProfileDimensionConflicts {
+  keysChecked: number;
+  conflictingKeys: number;
+  byField: Array<{ field: string; conflictingKeys: number }>;
+}
+
 /** `GET /sessions/{id}/profile` payload (contract shape; counts only). */
 export interface ProfileData {
   rows: number;
   columns: number;
   grain: string;
-  missingness: unknown[];
-  cardinality: unknown[];
+  missingness: ProfileMissingness[];
+  cardinality: ProfileCardinality[];
   duplicates: {
     exact: number;
     keyDupes: number;
   };
-  invarianceConflicts: unknown;
+  invarianceConflicts: ProfileInvarianceConflicts;
+  productInvarianceConflicts: ProfileDimensionConflicts;
+  customerInvarianceConflicts: ProfileDimensionConflicts;
 }
 
 /** One data-quality issue (contract shape; counts only, never values). */
