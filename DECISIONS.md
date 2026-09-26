@@ -1332,6 +1332,31 @@ Additive to ADR-033 and ADR-038 (neither is modified or superseded):
 
 ---
 
+## ADR-041 — Public DataCo reference source
+
+**Status:** Accepted
+**Date:** 2026-09-26
+
+### Context
+
+Phase 16 must document how another user obtains the public V1 reference dataset, but no exact public source identity was governed in the repository: only the name "public DataCo supply-chain CSV" existed, with no host, record, persistent identifier, or license fact. A landing-page-only research pass (no dataset bytes downloaded, no rows inspected) identified the versioned research-data record below. Kaggle and GitHub copies of the same titled dataset exist but carry no independent provenance, so they are not governed sources.
+
+### Decision
+
+- The V1 public reference/demo dataset is **DataCo SMART SUPPLY CHAIN FOR BIG DATA ANALYSIS**, published on **Mendeley Data** at the versioned record `https://data.mendeley.com/datasets/8gx2fvg2k6/5`, persistent identifier **DOI 10.17632/8gx2fvg2k6.5**, **Version 5** (published 12 March 2019; contributors as source-listed: Fabian Constante, Fernando Silva, António Pereira).
+- The source landing page lists three files: `DataCoSupplyChainDataset.csv`, `tokenized_access_logs.csv`, and `DescriptionDataCoSupplyChain.csv`. The V1 application reference input is `DataCoSupplyChainDataset.csv`. `tokenized_access_logs.csv` remains outside V1 application scope per ADR-006; `DescriptionDataCoSupplyChain.csv` is source documentation, not an application input.
+- License fact: the Mendeley Data record labels the dataset **CC BY 4.0**. Users obtaining the dataset must comply with the source record's current license and terms. ADR-024 stands unchanged: this repository neither commits nor redistributes the dataset.
+- Access: the public landing page exposes dataset download controls. Any access requirements presented by Mendeley Data at download time apply; no click-level access behavior was verified.
+- Limits: ADR-001 (reference/demo data, not universal schema) and ADR-020 (reference controls are regression controls, not production constants) stand unchanged. Source provenance does not prove that a locally held reference file is byte-identical to Mendeley Version 5; the pending real-reference verifications for Phases 6/8/9 remain pending until the governed checks execute against a locally obtained file.
+
+### Consequences
+
+- Phase-16 README obtain-steps can now name the exact record, DOI, expected filename, license label, and non-redistribution policy without invention.
+- No export, API, canonical, or KPI semantics change; no new test fixture is added from DataCo content.
+- A future source migration (new version, new host) requires a new accepted decision.
+
+---
+
 ## Decision-change template
 
 Copy this section when proposing a new material decision:
