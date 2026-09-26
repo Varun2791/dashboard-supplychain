@@ -2,6 +2,10 @@ import type {
   ApiErrorPayload,
   CleaningReportData,
   DataQualityData,
+  ExportFilters,
+  ExportIdentity,
+  ExportKind,
+  ExportRequest,
   FilterOptionsData,
   KpiCommercialData,
   KpiDeliveryData,
@@ -20,6 +24,10 @@ export type {
   ApiErrorPayload,
   CleaningReportData,
   DataQualityData,
+  ExportFilters,
+  ExportIdentity,
+  ExportKind,
+  ExportRequest,
   FilterOptionsData,
   KpiCommercialData,
   KpiDeliveryData,
@@ -654,4 +662,137 @@ export async function fetchOrders(
     "Could not read the order records.",
   );
   throw new ApiRequestError(response.status, message, code, details);
+}
+
+/**
+ * Build one governed export artifact (Phase-16, ADR-033/040, contract §3).
+ * Data kinds send the active 8-key filters; report kinds send no `filters`
+ * field at all (the backend rejects any non-empty report filter). Resolves
+ * with the server-generated POST identity: top-level fields describe the
+ * PRIMARY artifact, `metadata` describes the CSV sidecar (`null` for JSON
+ * reports). Bytes are never synthesized client-side.
+ */
+export async function createExport(
+  sessionId: string,
+  request: ExportRequest,
+): Promise<ExportIdentity> {
+  const body: Record<string, unknown> =
+    request.filters === undefined
+      ? { kind: request.kind }
+      : { kind: request.kind, filters: request.filters };
+  let response: Response;
+  try {
+    response = await fetch(
+      `${API_BASE}/api/v1/sessions/${encodeURIComponent(sessionId)}/exports`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    );
+  } catch {
+    throw new ApiRequestError(
+      0,
+      "Could not reach the local server. Start the backend and try again.",
+    );
+  }
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  if (response.ok) {
+    return (payload as { data: ExportIdentity }).data;
+  }
+  const { message, code, details } = envelopeError(
+    payload,
+    "The export could not be created.",
+  );
+  throw new ApiRequestError(response.status, message, code, details);
+}
+
+export interface ExportDownload {
+  /** Persisted artifact bytes, served unchanged by the backend. */
+  blob: Blob;
+  /** Authoritative transport filename when the server sent one. */
+  filename: string | null;
+}
+
+/** Parse `attachment; filename="..."` without trusting user filenames. */
+function parseDispositionFilename(header: string | null): string | null {
+  if (header === null || header === "") {
+    return null;
+  }
+  const match = /filename="([^"]+)"/.exec(header);
+  return match !== null ? match[1] : null;
+}
+
+async function downloadExportBytes(
+  sessionId: string,
+  exportId: string,
+  suffix: string,
+  fallback: string,
+): Promise<ExportDownload> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `${API_BASE}/api/v1/sessions/${encodeURIComponent(sessionId)}/exports/${encodeURIComponent(exportId)}${suffix}`,
+    );
+  } catch {
+    throw new ApiRequestError(
+      0,
+      "Could not reach the local server. Start the backend and try again.",
+    );
+  }
+  if (response.ok) {
+    const blob = await response.blob();
+    return {
+      blob,
+      filename: parseDispositionFilename(
+        response.headers.get("Content-Disposition"),
+      ),
+    };
+  }
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  const { message, code, details } = envelopeError(payload, fallback);
+  throw new ApiRequestError(response.status, message, code, details);
+}
+
+/**
+ * Download the persisted PRIMARY artifact bytes (never regenerated).
+ * The caller uses the POST-identity filename as the UI-known name;
+ * the transport filename here is authoritative metadata when present.
+ */
+export function downloadExportPrimary(
+  sessionId: string,
+  exportId: string,
+): Promise<ExportDownload> {
+  return downloadExportBytes(
+    sessionId,
+    exportId,
+    "",
+    "The export file could not be downloaded.",
+  );
+}
+
+/**
+ * Download the persisted CSV `.meta.json` sidecar content (GET only).
+ * JSON reports have no sidecar; the backend answers export-not-found.
+ */
+export function downloadExportMetadata(
+  sessionId: string,
+  exportId: string,
+): Promise<ExportDownload> {
+  return downloadExportBytes(
+    sessionId,
+    exportId,
+    "/metadata",
+    "The metadata sidecar could not be downloaded.",
+  );
 }

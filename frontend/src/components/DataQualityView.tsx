@@ -16,6 +16,7 @@ import type {
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { useSession } from "@/lib/session";
 import { VIEWS } from "@/lib/view-registry";
+import ExportSection from "@/components/ExportSection";
 
 interface Reports {
   schema: SchemaReportData;
@@ -714,17 +715,9 @@ export default function DataQualityView() {
       <SchemaCoverage schema={reports.schema} />
       <IssuesBySeverity quality={reports.quality} />
       <CleaningAudit cleaning={reports.cleaning} />
-      <section aria-labelledby="dq-export-heading">
-        <h3 id="dq-export-heading" className="text-base font-semibold">
-          Exports
-        </h3>
-        <div className="mt-2">
-          <EmptyState
-            title="Exports arrive in Phase 16"
-            body="Approved kinds for this evidence are the data-quality report, the cleaning report, and the sanitized cleaned items. Raw data is never exportable."
-          />
-        </div>
-      </section>
+      {/* Keyed by session: export identities are session-bound and never
+          survive a replacement or reset session. */}
+      <ExportSection key={session.sessionId} />
     </section>
   );
 }

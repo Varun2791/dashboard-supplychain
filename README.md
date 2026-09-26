@@ -12,7 +12,16 @@ All uploaded data is processed only in the locally running application environme
 
 ## Reference dataset (not included)
 
-The V1 reference dataset is the public DataCo supply-chain CSV. It is **not distributed in this repository** (see `DECISIONS.md` ADR-024) and is never committed: obtain it separately for local verification. Automated tests use small invented fixtures under `backend/tests/fixtures/` instead. The MIT license in this repository applies to the application source code only, not to the external DataCo dataset.
+The V1 reference/demo dataset is **DataCo SMART SUPPLY CHAIN FOR BIG DATA ANALYSIS**, published on **Mendeley Data** (versioned record `https://data.mendeley.com/datasets/8gx2fvg2k6/5`, DOI `10.17632/8gx2fvg2k6.5`; see `DECISIONS.md` ADR-041). It is **not distributed in this repository** (see `DECISIONS.md` ADR-024) and is never committed: obtain it from the governed public source.
+
+To obtain it yourself:
+
+1. Open the versioned Mendeley Data record above.
+2. Use the download controls provided by Mendeley Data to obtain the structured file `DataCoSupplyChainDataset.csv` (the V1 application reference input). The record also lists `tokenized_access_logs.csv`, which is outside V1 application scope, and `DescriptionDataCoSupplyChain.csv`, which is source documentation rather than an application input.
+3. Any access requirements shown by Mendeley Data at download time apply.
+4. Keep the downloaded file outside this repository and upload the local CSV through the application's Upload view for local verification.
+
+The source record labels the dataset **CC BY 4.0**; follow the source record's current license and terms. The repository's MIT license applies to repository code, not automatically to externally obtained dataset content. Automated tests use small synthetic/invented fixtures under `backend/tests/fixtures/` instead of the DataCo dataset. DataCo is the V1 reference/demo dataset, not a universal supply-chain schema: reference-data findings describe the supplied dataset and should not be treated as real-company operational conclusions.
 
 ## Architecture summary
 

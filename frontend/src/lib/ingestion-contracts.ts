@@ -238,3 +238,52 @@ export interface OrdersData {
     total: number;
   };
 }
+
+/**
+ * Governed Phase-16 export kinds (ADR-033/040, contract §1). Exactly these
+ * four; raw is never exportable and there is no fifth kind.
+ */
+export type ExportKind =
+  "cleaned_items" | "orders" | "quality_report" | "cleaning_report";
+
+/**
+ * Narrow valid-client export filters: exactly the 8-key public V1 set
+ * (ADR-040 §1b). Absent means "All". `department` and `customer_segment`
+ * are never valid export filters in V1.
+ */
+export interface ExportFilters {
+  from?: string;
+  to?: string;
+  market?: string;
+  region?: string;
+  category?: string;
+  shipping_mode?: string;
+  order_status?: string;
+  shipment_outcome?: string;
+}
+
+/** `POST /sessions/{id}/exports` body. Reports send no `filters` field. */
+export interface ExportRequest {
+  kind: ExportKind;
+  filters?: ExportFilters;
+}
+
+/** Identity of the CSV `.meta.json` sidecar (CSV kinds only). */
+export interface ExportMetadataIdentity {
+  filename: string;
+  bytes: number;
+  sha256: string;
+}
+
+/**
+ * `POST /sessions/{id}/exports` payload (contract §3 exactly).
+ * Top-level identity is the PRIMARY artifact; `metadata` is the sidecar
+ * identity (`null` for JSON reports).
+ */
+export interface ExportIdentity {
+  exportId: string;
+  filename: string;
+  bytes: number;
+  sha256: string;
+  metadata: ExportMetadataIdentity | null;
+}

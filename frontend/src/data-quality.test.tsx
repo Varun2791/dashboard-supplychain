@@ -300,7 +300,21 @@ describe("Phase-11 Data Quality view", () => {
     expect(
       screen.getByText(/detected is not the same as fixed/i),
     ).toBeInTheDocument();
-    expect(screen.getByText(/exports arrive in phase 16/i)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/exports arrive in phase 16/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Export sanitized cleaned items" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Export canonical orders" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Export data-quality report" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Export cleaning report" }),
+    ).toBeInTheDocument();
     expect(screen.queryByText("No dataset loaded")).not.toBeInTheDocument();
   });
 
