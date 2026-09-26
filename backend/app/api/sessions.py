@@ -57,6 +57,7 @@ from app.ingestion_errors import (
 )
 from app.schema_validation import run_schema_validation
 from app.schemas import (
+    STATE_ANALYZING,
     STATE_CANONICALIZING,
     STATE_EXPIRED,
     STATE_FAILED,
@@ -616,11 +617,14 @@ async def session_data_quality(
 def _cleaning_artifact_or_raise(
     session_id: str,
 ) -> tuple[SessionManifest, CleaningArtifact]:
-    """Return the stored cleaning report for CANONICALIZING sessions.
+    """Return the stored cleaning report once cleaning has completed.
 
-    Purely observational: never executes cleaning. Pending sessions get
-    the contract 409 NOT_READY; terminal sessions re-surface their stored
-    error without leaking values.
+    The governed cleaning artifact is produced at the CLEANING ->
+    CANONICALIZING transition and its manifest pointer is preserved by
+    every later transition, so the report stays servable through
+    CANONICALIZING, ANALYZING, and READY. Purely observational: never
+    executes cleaning. Pending sessions get the contract 409 NOT_READY;
+    terminal sessions re-surface their stored error without leaking values.
     """
     manifest, paths = _resolve_session(session_id)
     if manifest.state == STATE_FAILED:
@@ -637,7 +641,10 @@ def _cleaning_artifact_or_raise(
             session_id=session_id,
             session_state=manifest.state,
         )
-    if manifest.state != STATE_CANONICALIZING or manifest.cleaningArtifact is None:
+    if (
+        manifest.state not in (STATE_CANONICALIZING, STATE_ANALYZING, STATE_READY)
+        or manifest.cleaningArtifact is None
+    ):
         raise IngestionError(
             NOT_READY,
             STAGE_CLEANING,

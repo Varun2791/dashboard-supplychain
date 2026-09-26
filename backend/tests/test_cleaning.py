@@ -927,3 +927,97 @@ def test_generated_scale_reconciles(client: TestClient, session_root: str) -> No
         )
     with open(os.path.join(paths.derived, "cleaning_report.json"), "rb") as handle:
         assert b"SYN-ORDER-" not in handle.read()
+
+
+# ---------------------------------------------------------------------------
+# Cleaning-report lifecycle serving (MATERIAL-1): the governed cleaning
+# artifact is produced at the CLEANING -> CANONICALIZING transition and its
+# manifest pointer is preserved by every later transition (canonicalization
+# adopt/park, KPI adopt), so GET cleaning-report must stay available through
+# ANALYZING and READY — never 409 NOT_READY there.
+# ---------------------------------------------------------------------------
+
+
+def test_cleaning_report_served_at_ready(client: TestClient, session_root: str) -> None:
+    """A real READY session serves its cleaning report (not 409 NOT_READY)."""
+    session_id, _ = upload_ok(client, TRIM_BYTES)
+    assert (
+        client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]["state"]
+        == "READY"
+    )
+    response = client.get(f"/api/v1/sessions/{session_id}/cleaning-report")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["meta"]["sessionState"] == "READY"
+    steps = body["data"]["steps"]
+    assert isinstance(steps, list) and steps
+    assert {s["ruleId"] for s in steps} >= {"DQ-CAT-005", "DQ-PRIVACY-001"}
+
+
+def test_cleaning_report_served_at_analyzing(session_root: str) -> None:
+    """An ANALYZING session (real stage machinery) still serves cleaning-report."""
+    from app.canonicalization import ensure_canonicalized
+    from app.cleaning import ensure_cleaned
+    from app.profiling import ensure_profiled
+    from app.schema_validation import ensure_schema_validated
+
+    session_id = str(uuid.uuid4())
+    paths = session_store.session_paths(session_root, session_id)
+    os.makedirs(paths.derived)
+    os.makedirs(paths.exports)
+    with open(paths.raw, "wb") as handle:
+        handle.write(TRIM_BYTES)
+    now = session_store.utcnow_naive_iso()
+    manifest = session_store.build_manifest(
+        session_id=session_id,
+        filename_safe="data.csv",
+        size_bytes=len(TRIM_BYTES),
+        sha256_hex=hashlib.sha256(TRIM_BYTES).hexdigest(),
+        encoding="utf-8",
+        now=now,
+    )
+    session_store.write_manifest(paths, manifest)
+    validated = ensure_schema_validated(paths, manifest, now)
+    profiled = ensure_profiled(paths, validated, now)
+    cleaned = ensure_cleaned(paths, profiled, now)
+    assert cleaned.state == "CANONICALIZING"
+    assert cleaned.cleaningArtifact is not None
+    canonicalized = ensure_canonicalized(paths, cleaned, now)
+    assert canonicalized.state == "ANALYZING"
+    assert canonicalized.cleaningArtifact is not None
+    assert canonicalized.kpiArtifact is None
+    local_client = TestClient(app)
+    response = local_client.get(f"/api/v1/sessions/{session_id}/cleaning-report")
+    assert response.status_code == 200
+    assert response.json()["meta"]["sessionState"] == "ANALYZING"
+    assert isinstance(response.json()["data"]["steps"], list)
+
+
+def test_cleaning_report_missing_artifact_is_never_fabricated(
+    client: TestClient, session_root: str
+) -> None:
+    """READY + pointer set + unreadable file: stored 500, never invented steps."""
+    session_id, _ = upload_ok(client, TRIM_BYTES)
+    paths = session_store.session_paths(session_root, session_id)
+    manifest = session_store.read_manifest(paths)
+    assert manifest is not None and manifest.state == "READY"
+    assert manifest.cleaningArtifact is not None
+    os.remove(os.path.join(paths.derived, "cleaning_report.json"))
+    response = client.get(f"/api/v1/sessions/{session_id}/cleaning-report")
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "INTERNAL_STAGE_ERROR"
+
+
+def test_cleaning_report_unavailable_after_reset(
+    client: TestClient, session_root: str
+) -> None:
+    """DELETE removes the tree: cleaning-report is 404, never resurrected."""
+    session_id, _ = upload_ok(client, TRIM_BYTES)
+    assert client.get(f"/api/v1/sessions/{session_id}/cleaning-report").status_code in (
+        200,
+        409,
+    )
+    assert client.delete(f"/api/v1/sessions/{session_id}").status_code == 200
+    response = client.get(f"/api/v1/sessions/{session_id}/cleaning-report")
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "SESSION_NOT_FOUND"
