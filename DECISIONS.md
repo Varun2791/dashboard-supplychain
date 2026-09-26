@@ -977,6 +977,251 @@ Smallest deterministic readings, changing no contract:
 
 ---
 
+## ADR-038 — Phase-15 query surfaces and safe order drilldown
+
+**Status:** Accepted
+**Date:** 2026-09-26
+
+### Context
+
+Phase 15 requires shared analytical filters and a safe order-level
+drilldown, but three gaps block implementation without invention.
+First, the governed `GET /sessions/{id}/orders` route (api-contract)
+has no backend implementation, and its row shape, pagination details,
+ordering, and privacy allowlist are incomplete at implementation level
+(ADR-037 deferred the endpoint to Phase 15 without specifying them).
+Second, the required open-domain filters (`market`, `region`,
+`category`) have no closed enum (canonical-schema §7) and no
+backend-owned complete option source; analytical `by=` groups cannot
+serve as that source because they exclude unknown/null keys by design
+(ADR-030) and reflect whatever filter context produced them. Third,
+`customer_id` sits on the canonical orders table as an invariant, so
+row-level display needs an explicit include/exclude ruling.
+
+### Decision
+
+Smallest additive contract, changing no prior decision:
+
+- **Shared filter set (V1):** `from`/`to` (ISO dates on
+  `order_timestamp`), `market`, `region`, `category`,
+  `shipping_mode`, `order_status`, `shipment_outcome`.
+  `department` and `customer_segment` remain accepted backend
+  parameters but are NOT Phase-15 UI filters (minimal scope; no
+  backend change required to leave them unwired).
+- **Single-select only.** Current KPI endpoints accept one value per
+  dimension; V1 UI offers one value per dimension plus "All" (absent
+  parameter) plus the date range. Multi-select would require new
+  backend semantics and is out of scope.
+- **One shared filter state per active session**, owned above the
+  analytics views: persists across Overview/Delivery/Commercial/
+  Diagnostics navigation; cleared on dataset reset and on session
+  replacement (never applied to an unrelated session); Clear Filters
+  returns analytics to unfiltered session scope. No URL persistence.
+  Data Quality stays whole-session and filter-independent. No new
+  polling owner.
+- **Filter-domain endpoint:**
+  `GET /sessions/{session_id}/filter-options`, READY-gated like
+  analytics, returning the UNFILTERED session domain (V1
+  non-cascading: active filters never remove control options):
+  `dateRange{minOrderDate, maxOrderDate}` (nullable when no orders)
+  from canonical order dates on the order-date basis, plus
+  `markets[]`, `regions[]`, `categories[]` as sorted distinct
+  non-empty canonical display values. Market/region come from the
+  canonical orders table (order-destination geography, invariant);
+  category comes from the canonical ITEMS table (orders carry
+  single-or-null merch dims, so the orders table would silently drop
+  multi-category values). A category present in `categories[]`
+  therefore does NOT guarantee every order containing it appears in
+  `/orders`: drilldown returns only single-merch orders matching at
+  order level, while item-grain headlines can additionally hold
+  matching lines from multi-merch orders — a category existing only
+  on multi-merch orders may show headline values with no
+  corresponding drilldown rows (explicit V1 limitation; the facet
+  source stays on items, never moved to orders to hide this).
+  Null/empty values are excluded;
+  `UNKNOWN_FLAGGED`, if ever present in these columns, is excluded
+  from options (consistent with split exclusion) and filtering by it
+  is not a supported V1 interaction. Ordering is deterministic
+  (codepoint-sorted); no PII; local only.
+- **Closed/native controls need no endpoint:** date range uses native
+  date inputs bounded by the facet extent. Closed controls expose
+  only values that are BOTH governed canonical values AND accepted
+  by the current governed backend filter vocabulary: `order_status`
+  and `shipment_outcome` offer their full schema §7 domains, but
+  Phase-15 V1 shipping-mode options are `STANDARD_CLASS` and
+  `SAME_DAY` only — the currently mapped/backend-accepted subset.
+  `SECOND_CLASS` and `FIRST_CLASS` remain canonical-schema members
+  but are not selectable V1 filter options until governed source
+  mappings exist (offering them today would produce `422
+  INVALID_FILTER_VALUE`); the schema keeps all four and ADR-030 is
+  unchanged. `UNKNOWN_FLAGGED` is never a UI option: it remains
+  governed canonical/reportable state where applicable, only ever
+  excluded from selectable controls — UI scope, not a backend
+  vocabulary change.
+- **`/orders` as bounded, paginated, sanitized, one-row-per-order,
+  filter-aware diagnostic drilldown** (not item/customer detail,
+  search, export, or ad-hoc query). Row allowlist — canonical
+  `orders` fields only: `order_id`, `order_timestamp`,
+  `order_status`, `shipping_mode`, `customer_segment`,
+  `destination_country`, `destination_region`, `destination_market`,
+  `scheduled_shipping_days`, `actual_shipping_days` (null
+  preserved), `shipment_outcome`, `is_late` (null preserved),
+  `line_count`, `total_units`, `gross_value`, `discount_total`,
+  `net_value`, `profit_total`. Each is S/D/A per canonical-schema
+  §2 with a diagnostic purpose (identity, date basis, status,
+  shipment truth, aggregated commercial facts); none is personal
+  data. Explicitly EXCLUDED in V1: `customer_id` (unnecessary for
+  the stated diagnostic question — "which combinations and orders",
+  never "whose"), postal codes (never enter canonical structures),
+  and all canonical-schema §8 never-enter fields.
+  `order_id` display is explicitly authorized: operational row key
+  needed to distinguish records, not customer PII under existing
+  governance, with no customer identifier exposed alongside it.
+- **Filter-mechanics parity (not aggregate parity) by construction:**
+  `/orders` narrows with the SAME governed filter predicate
+  machinery as the KPI endpoints (identical parameter set and
+  matching behavior, including direct equality on canonical order
+  columns). Population and aggregate parity then depends on grain:
+  order-grain KPI populations reconcile with drilldown rows where
+  populations match, but item-grain commercial headline sums do not
+  necessarily reconcile to drilldown aggregates. Multi-merch orders
+  (multiple `category_name`/`department_name` values, hence null
+  order-level merch dims) are excluded by merch filters — consistent
+  with the headline order-frame KPIs under the same filter — while
+  item-grain commercial headlines can still include matching lines
+  from those excluded orders. Item-membership semantics are
+  explicitly declined: they would diverge from the headline order
+  populations the drilldown must reconcile with. Frontend aggregates
+  nothing; one order appears at most once.
+- **Pagination:** `limit` (default 50, maximum 200 — deliberate V1
+  choices: readable desktop/mobile tables, bounded payloads on a
+  65k-order reference scale, deterministic and testable) + opaque
+  `cursor`; `{rows[], page{nextCursor, total}}` plus the established
+  `meta.filters` echo. Cursor is opaque, keyset-stable under
+  unchanged dataset + filters; invalid cursor → `422
+  INVALID_PAGINATION`. No unbounded all-orders response.
+- **Default ordering (governed, not ranked):**
+  `order_timestamp` DESC, `order_id` ASC tie-break — recent orders
+  first without asserting performance. Null timestamps sort last
+  (defensive; unreachable behind the NN schema plus the
+  invariance gate). No frontend business sorting in V1.
+- **Lifecycle/serialization:** pre-READY → `409 NOT_READY`;
+  unknown/expired → existing 404/410; invalid filter/pagination →
+  422; valid filter + zero matches → `200` with `rows=[]`,
+  `total=0`, `nextCursor=null` (never an error, never zeros
+  disguised as data). Money as 2-dp strings without currency;
+  counts integers; days numeric/null; `is_late` boolean/null;
+  timestamps naive ISO; IDs strings — per api-contract §6.
+- **Reconciliation acceptance:** under identical filters, rows
+  represent the same filtered order population as the headline
+  order-grain KPIs where populations match — that order-population
+  parity is the guaranteed reconciliation (the literal Phase-15 exit
+  criterion, scoped to the populations that share a grain). Row-level
+  commercial fields equal stored canonical whole-order aggregates;
+  but under a merch (`category`/`department`) filter with
+  multi-merch orders present, item-grain commercial headline sums
+  are NOT guaranteed to reconcile to sums of those stored
+  aggregates, because matching lines from excluded multi-merch
+  orders contribute to headlines and never to drilldown rows. This
+  is governed cross-grain behavior, not a data error, and no backend
+  change is made here. `shipment_outcome` stays canonical truth. No
+  claim that every KPI denominator equals drilldown `total` —
+  populations/exclusions legitimately differ.
+
+### Consequences
+
+- Phase 15 can be implemented with zero invention: two small
+  backend surfaces (facet + orders reads over existing canonical
+  tables and filter mechanics) plus frontend state, refetch,
+  tables, and pagination.
+- Any new filter dimension, multi-select, cascading facets,
+  customer-ID display, new row field, or export of rows requires a
+  new accepted decision. Phase 16 still owns all export mechanics;
+  `/orders` responses must never be treated as exports.
+- Phase-15 tests and mocks must not expose fields, filter values, or
+  capabilities the real producer does not emit or accept.
+
+---
+
+## ADR-039 — Phase-15 diagnostic ranking semantics
+
+**Status:** Accepted
+**Date:** 2026-09-26
+
+### Context
+
+Phase 15 requires "multi-dimensional diagnostic ranking," but no
+authority names its dimensions, metrics, directions, or ordering
+ownership. Backend groups arrive alphabetically (`group_keys`
+sorted); frontend metric-sorting would be new business semantics in
+TypeScript that architecture forbids the UI to own
+(`ui … performs no calculations`), and prior phases deliberately
+held "backend group order preserved, no ranking." Leaving the
+operation undefined blocks implementation; defining it as an open
+ranking engine invites causal and best/worst language the project
+prohibits.
+
+### Decision
+
+Two fixed descriptive rankings, nothing more:
+
+- **A. Shipment diagnostic ranking.** Dimensions: `shipping_mode`,
+  `destination_market`, `destination_region`, `category_name`.
+  Metric: `kpi.ship.late_rate`. Direction: descending. Answers
+  where late-shipment incidence is most concentrated, by rate.
+- **B. Commercial diagnostic ranking.** Dimensions:
+  `department_name`, `category_name`, `product_name`,
+  `destination_market`, `destination_region`, `customer_segment`.
+  Metric: `kpi.orders.loss_making_rate`. Direction: descending.
+  Answers where negative-recorded-order-profit incidence is
+  highest, by rate.
+- **Ownership (narrow explicit permission):** backend remains owner
+  of every KPI value and denominator. For exactly these two
+  rankings, the frontend MAY perform presentation-only stable
+  ordering of already-returned backend group results: only the
+  named metric, only the named dimensions, only descending, no KPI
+  recomputation, deterministic tie-break by group key, unavailable
+  metrics placed after available values (never ranked as zero),
+  denominator displayed beside every ranked rate. No minimum
+  population threshold is invented; small denominators are shown,
+  never hidden, and no significance is implied. If review later
+  finds even this too much semantics in TypeScript, the governed
+  fallback is a backend ordering parameter — not silent frontend
+  expansion.
+- **Labels:** concrete metric language only ("Highest
+  late-shipment rates", "Highest loss-making-order rates").
+  Forbidden as rankings or conclusions: best/worst, good/bad,
+  winner/loser, underperformer, driver(s), cause(s), root cause(s),
+  "because of" as analysis. Rankings and drilldown identify groups
+  and records ASSOCIATED WITH observed metrics; association-only
+  copy is required wherever a ranking is shown.
+- **Filter consistency:** rankings reorder backend group results
+  recomputed under the active shared filters (ADR-038); stale
+  unfiltered groups are never ranked under filtered headlines.
+  Zero-eligible filter contexts render shipment rankings
+  unavailable/empty honestly while commercial rankings may remain
+  valid; never 0%.
+- **Category population distinction:** delivery-by-category operates
+  on order-frame category and therefore covers only
+  single-merchandise orders with a governed non-null category
+  (multi-merch nulls form no group, per split exclusion);
+  commercial-by-category groups originate from item contribution and
+  contributing orders are evaluated on whole-order recorded profit —
+  the two category populations are not identical.
+  Association-only language applies to both; neither population is
+  better or worse.
+
+### Consequences
+
+- Diagnostics can rank without redefining KPIs, inventing
+  thresholds, or implying causation; tests can assert exact
+  presentation order against backend-shaped fixtures.
+- Any third ranking, any new metric/direction, any causal label,
+  or any frontend filtering/recomputation of KPI values needs a
+  new accepted decision.
+
+---
+
 ## Decision-change template
 
 Copy this section when proposing a new material decision:
