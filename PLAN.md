@@ -497,7 +497,7 @@ Suggested commit: `feat(dashboard): add shipment performance analytics`
 
 ## Phase 14 — Commercial analytics
 
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
 ### Objective
 
@@ -505,18 +505,20 @@ Answer: which products and geographies are associated with value, profit, discou
 
 ### Tasks
 
-- [ ] Add net order value, profit, margin, discount, and units analysis.
-- [ ] Add department, category, product, market, region, and segment breakdowns.
-- [ ] Add loss-making order and item analysis.
-- [ ] Show order-status scope explicitly.
-- [ ] Use weighted rates and reconciled totals.
-- [ ] Avoid causal claims about delivery and sales/profit.
+- [x] Add net order value, profit, margin, discount, and units analysis. — `CommercialView` headline cards (gross, discount, recorded net, recorded profit, margin, discount rate, AOV, units/lines per order) selected by ID from `GET kpis/overview`; per-group net/profit/margin/discount/discount-rate/loss-rate columns from `GET kpis/commercial?by=…` (units analysis stays headline-level via units cards/means: grouped commercial responses carry no `kpi.units.total`); labels, populations, and exclusions verbatim from the API.
+- [x] Add department, category, product, market, region, and segment breakdowns. — Backend `by=department_name|category_name|product_name|destination_market|destination_region|customer_segment` group tables (backend group order preserved, no ranking); recorded-net bar charts for category and market plus accessible data tables; unavailable groups stay unavailable, never zero.
+- [x] Add loss-making order and item analysis. — Headline loss-making-order-rate card plus per-group loss-rate column; negative recorded profit retained and displayed (never clipped); item-level negatives stay visible in group profit figures, descriptive only.
+- [x] Show order-status scope explicitly. — Backend `statusScope` (all-status default) rendered as scope context; interactive filtering stays deferred to Phase 15 (no filter controls wired).
+- [x] Use weighted rates and reconciled totals. — Headline margin/discount-rate and per-group margins are backend amount-weighted ratios of sums (never means of ratios); department group nets reconcile to the headline net in tests; gross-minus-discount stated as tolerance-checked reconciliation, never recalculated.
+- [x] Avoid causal claims about delivery and sales/profit. — Association-only copy throughout; late-associated net value shown as context that is never lost sales; negative-test terminology assertions.
 
 ### Exit criteria
 
-- Aggregated amounts reconcile to item-level facts.
-- Margin and discount rates are amount-weighted.
-- All labels preserve the dataset's commercial limitations.
+- [x] Aggregated amounts reconcile to item-level facts. — Every number renders from the two governed responses (headline `kpis[]`/`totals`, grouped commercial sets); display-only formatting with zero business arithmetic.
+- [x] Margin and discount rates are amount-weighted. — Backend ratio-of-sums per scope and per group; frontend never divides.
+- [x] All labels preserve the dataset's commercial limitations. — Approved labels only ("Recorded net order value", never revenue; no currency; synthetic-demo disclosure; no recognized-revenue/accounting-profit implication; tested).
+
+Evidence: `make check` green (backend 275 passed + 1 env-gated skip, untouched; frontend 124 passed — 25 new Commercial tests + 1 new shell real-view test; Ruff, format, mypy strict, tsc, ESLint 0 errors, Prettier, `vite build` green), axe-clean loaded Commercial, synthetic browser smoke (upload → Commercial loading/gate → away/back → reset, 1200/428px). No backend changes; no KPI math in TypeScript; shared filters, ranking, and row drilldown stay deferred to Phase 15, exports to Phase 16.
 
 Suggested commit: `feat(dashboard): add commercial and profitability analytics`
 

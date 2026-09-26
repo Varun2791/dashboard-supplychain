@@ -26,6 +26,7 @@ const MONEY_IDS: ReadonlySet<string> = new Set([
   "kpi.value.net",
   "kpi.profit.recorded",
   "kpi.value.aov",
+  "kpi.value.net_associated_with_late",
 ]);
 
 /** Rate values: 4-dp fraction strings rendered as 1-dp UI percentages. */
@@ -52,6 +53,19 @@ export const CARD_MEANINGS: Record<string, string> = {
     "Recorded line profit; negative values are retained, never clipped.",
   "kpi.margin.profit":
     "Amount-weighted share: total profit divided by total net.",
+  "kpi.value.gross":
+    "Pre-discount recorded value summed across order-item lines.",
+  "kpi.value.discount": "Recorded discounts summed across order-item lines.",
+  "kpi.rate.discount":
+    "Amount-weighted share: total discount divided by total gross.",
+  "kpi.value.aov": "Mean recorded net per order; unavailable when no orders.",
+  "kpi.units.per_order": "Mean units per order; unavailable when no orders.",
+  "kpi.lines.per_order":
+    "Mean order-item lines per order; unavailable when no orders.",
+  "kpi.orders.loss_making_rate":
+    "Share of orders with negative total recorded profit.",
+  "kpi.value.net_associated_with_late":
+    "Recorded net on late-shipment orders; association only, never lost sales.",
   "kpi.ship.late_rate":
     "Share of shipment-eligible orders arriving after schedule.",
   "kpi.ship.on_schedule_rate":

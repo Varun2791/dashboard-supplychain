@@ -21,13 +21,11 @@ import UploadSession from "./components/UploadSession";
 
 expect.extend(matchers);
 
-const VIEW_PHASES: Array<[string, string]> = [
-  ["Commercial", "Phase 14"],
-  ["Diagnostics", "Phase 15"],
-];
-// Data Quality left the stub set in Phase 11, Overview in Phase 12, and
-// Delivery in Phase 13: they render real views now (covered in their own
-// test files), so they are asserted separately below.
+const VIEW_PHASES: Array<[string, string]> = [["Diagnostics", "Phase 15"]];
+// Data Quality left the stub set in Phase 11, Overview in Phase 12,
+// Delivery in Phase 13, and Commercial in Phase 14: they render real views
+// now (covered in their own test files), so they are asserted separately
+// below.
 
 describe("Phase-10 application shell", () => {
   it("navigates six governed views with the upload view active first", () => {
@@ -39,6 +37,7 @@ describe("Phase-10 application shell", () => {
       "Data Quality",
       "Overview",
       "Delivery",
+      "Commercial",
       ...VIEW_PHASES.map(([label]) => label),
     ].map((label) => inNav.getByRole("button", { name: label }));
     expect(nav).toBeInTheDocument();
@@ -85,6 +84,16 @@ describe("Phase-10 application shell", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("No dataset loaded")).toBeInTheDocument();
     expect(screen.queryByText(/phase 13/i)).not.toBeInTheDocument();
+  });
+
+  it("renders the real Commercial view instead of a phase stub", () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Commercial" }));
+    expect(
+      screen.getByRole("heading", { name: "Commercial" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("No dataset loaded")).toBeInTheDocument();
+    expect(screen.queryByText(/phase 14/i)).not.toBeInTheDocument();
   });
 
   it("marks future views with their owning phase and no fabricated numbers", () => {
