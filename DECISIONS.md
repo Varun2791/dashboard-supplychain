@@ -1222,6 +1222,116 @@ Two fixed descriptive rankings, nothing more:
 
 ---
 
+## ADR-040 — Export serving, filtering, and provenance semantics
+
+**Status:** Accepted
+**Date:** 2026-09-26
+
+### Context
+
+ADR-033 fixed the four export kinds, allowlists, privacy gate, and
+provenance fields, but left serving semantics implicit: whether reports
+accept filters, which filter keys data exports accept, what
+`filtersApplied` truthfully contains, what the POST hash covers when a
+CSV has a sidecar, how that sidecar is downloaded, and what
+same-session vs cross-session reproducibility promises. Phase 16A
+cannot be implemented without invention until these are frozen.
+
+### Decision
+
+Additive to ADR-033 and ADR-038 (neither is modified or superseded):
+
+- **Kind/filter matrix.** `cleaned_items`: FILTERS APPLIED.
+  `orders`: FILTERS APPLIED. `quality_report`: FILTERS REJECTED (whole-
+  session audit artifact; any non-empty filter in the request is a
+  validation failure, never silently ignored or accepted-and-recorded).
+  `cleaning_report`: same REJECTED rule as `quality_report`.
+- **Data-export vocabulary (V1).** The public Phase-16 filter set is
+  exactly the Phase-15 shared set: `from`, `to`, `market`, `region`,
+  `category`, `shipping_mode`, `order_status`, `shipment_outcome`.
+  `department` and `customer_segment` are NOT public export filters in
+  V1 even though `KpiFilters` internally supports them. Value semantics
+  reuse Phase 15 (`from`/`to` on `order_timestamp`; canonical market /
+  region; grain-specific category per below; existing accepted enum
+  vocabularies; no coercion, fuzzy matching, or shipping-mapping
+  expansion). Unknown keys/values fail validation.
+- **Category grain.** `cleaned_items`: item-grain inclusion (a line is
+  included when its own canonical `category_name` matches). `orders`:
+  direct equality on the canonical order-level category field;
+  multi-merchandise orders with null order-level category are excluded.
+  No membership semantics; no cross-grain repair.
+- **Cross-grain reconciliation.** Under merchandise/category filters the
+  two data exports are governed at different grains, so
+  `cleaned_items` commercial totals are NOT required to equal `orders`
+  aggregates when multi-merchandise orders exist. Each reconciles to
+  its own governed filtered population (Phase-16 analogue of the
+  accepted Phase-15 qualification).
+- **Reports.** Both reports are whole-session, filter-independent,
+  JSON-only in V1 (the contract's "optional CSV" stays deferred; no
+  format selector, no new kind). `quality_report` reconciles to
+  profiling/data-quality artifacts; `cleaning_report` to cleaning
+  audit artifacts.
+- **E1 reading.** PLAN Phase-16 "Exported counts and totals reconcile
+  with the active dataset and filters" means: data exports reconcile
+  to their governed filtered populations; reports reconcile to their
+  whole-session evidence (analytics filters N/A); cross-grain equality
+  between data exports is not required.
+- **`filtersApplied` truthfulness.** Contains ONLY filters that
+  actually narrowed artifact content (normalized active filters for
+  data exports; empty object `{}` for reports). Rejected/requested
+  filters are never recorded as applied. No `requestedFilters` in V1.
+- **Reproducibility.** Same session (same source, canonical artifacts,
+  normalized filters, app/schema versions): primary data content is
+  deterministically reproducible; volatile metadata may differ where
+  the contract permits. Cross session (same source SHA, code/schema
+  versions, normalized filters): primary data content is
+  semantically/content-equivalent; metadata need not be byte-identical
+  (`sessionId`, `generatedAt`, filename timestamp, safe source-name
+  provenance may differ). No byte-identical-package promise across
+  sessions.
+- **CSV logical export.** One logical export record = TWO persisted
+  files: primary `.csv` + same-basename `.meta.json`. POST returns
+  `{ exportId, filename, bytes, sha256, metadata: { filename, bytes,
+  sha256 } }`; top-level identity always refers to the PRIMARY
+  artifact, `metadata` only to the sidecar. No fifth kind, no second
+  exportId, no combined/bundle hash. JSON reports embed provenance in
+  the primary artifact, so POST returns `metadata: null` (stable
+  shape).
+- **Downloads.** `GET …/exports/{exportId}` serves the persisted
+  primary bytes (never regenerated; lookup by session + exportId
+  only). New `GET …/exports/{exportId}/metadata` serves the sidecar
+  where one exists; where none exists (JSON reports) it uses the
+  existing export-not-found semantics. No ZIP/bundle; no CSV comment
+  metadata.
+- **Atomicity.** A CSV export is created only when BOTH primary and
+  sidecar are fully generated, hashed, and atomically published; POST
+  `201` never returns for a half-valid record, and failure leaves no
+  downloadable record.
+- **Errors (no new codes).** Filters on a report → existing `422
+  INVALID_FILTER_VALUE` (reason: filters not applicable to report
+  exports). Invalid kind → existing `INVALID_EXPORT_KIND`. Missing
+  sidecar → existing `EXPORT_NOT_FOUND` semantics. `DQ-PRIVACY-003`
+  unchanged: export-time candidate-headers ∩ banned-headers must be
+  empty or the export is blocked (`422 EXPORT_BLOCKED`), counts-only
+  diagnostics.
+- **Reference-dataset docs.** Phase 16 owns the minimal obtain-steps
+  task; target is `README.md` "Reference dataset (not included)"
+  (source identification + obtain steps + non-redistribution +
+  license/usage + synthetic-fixture note). `README.md` itself is
+  unchanged by this decision; Phase 18 may polish release docs only.
+
+### Consequences
+
+- Audit reports reject filters; the V1 public export filter vocabulary
+  is the 8 shared filters.
+- CSV exports are two-file logical exports retrievable through the
+  metadata GET; no fifth export kind exists.
+- Cross-grain equality is not promised; each data export reconciles to
+  its own population.
+- README obtain-steps remain Phase-16 work; PLAN.md is untouched.
+
+---
+
 ## Decision-change template
 
 Copy this section when proposing a new material decision:
