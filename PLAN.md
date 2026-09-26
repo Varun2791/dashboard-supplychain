@@ -439,7 +439,7 @@ Suggested commit: `feat(data-quality): add transparent quality and cleaning repo
 
 ## Phase 12 — Executive overview
 
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
 ### Objective
 
@@ -447,18 +447,20 @@ Answer: what happened across commercial value and shipment performance?
 
 ### Tasks
 
-- [ ] Add core KPI cards with definitions and populations.
-- [ ] Add order-value/profit trend using order date.
-- [ ] Add shipment outcome distribution.
-- [ ] Add market or region performance with clear geography semantics.
-- [ ] Surface active status and eligibility filters.
-- [ ] Add dataset-syntheticity/methodology disclosure where appropriate.
+- [x] Add core KPI cards with definitions and populations. — `OverviewView` renders 8 headline cards (net value, profit, margin, late/on-schedule rates, orders, eligible orders, units) selected by ID from `GET kpis/overview`; labels, populations, and exclusions verbatim from the API; methodology via the Phase-10 `KpiDefinition` pattern with short contract-traceable phrases.
+- [x] Add order-value/profit trend using order date. — Monthly `order_month` groups from `GET kpis/commercial?by=order_month` feed a two-series Recharts line (net solid, profit dashed) plus an accessible data table; unavailable months leave gaps, never zeros.
+- [x] Add shipment outcome distribution. — Late/early/exact headline counts as a bar chart with eligible-population context and the never-count-cancelled-as-non-late rule stated.
+- [x] Add market or region performance with clear geography semantics. — Destination-region net values from `GET kpis/commercial?by=destination_region` as a real table; coarse geography only.
+- [x] Surface active status and eligibility filters. — Commercial `statusScope` and delivery `exclusions`/eligible counts rendered as context; interactive filtering stays deferred to Phase 15 (shared-filter owner), so no filter controls are wired.
+- [x] Add dataset-syntheticity/methodology disclosure where appropriate. — Overview carries its own disclosure (synthetic demo file; adherence is schedule outcomes, not customer delivery performance).
 
 ### Exit criteria
 
-- Cards and charts reconcile with the KPI engine.
-- No visual calls recorded order value recognized revenue.
-- No visual calls shipment adherence customer delivery performance.
+- [x] Cards and charts reconcile with the KPI engine. — Every number renders from the four governed responses (headline `kpis[]`/`totals`, delivery eligible/exclusions, grouped commercial sets); display-only formatting (counts, 2-dp neutral amounts, 1-dp percents) with zero business arithmetic; unavailable stays unavailable with backend reasons.
+- [x] No visual calls recorded order value recognized revenue. — Approved labels only ("Recorded net order value"); no revenue/profit-accounting language (tested).
+- [x] No visual calls shipment adherence customer delivery performance. — Approved labels only ("Late-shipment rate", "On-schedule shipment rate") plus explicit schedule-outcome disclosure (tested).
+
+Evidence: `make check` green (backend 275 passed + 1 env-gated skip, untouched; frontend 77 passed — 19 new Overview tests + 1 shell real-view test; Ruff, format, mypy strict, tsc, ESLint 0 errors, Prettier, `vite build` green), axe-clean loaded Overview, synthetic browser smoke (upload → Overview lifecycle → report, away/back, reset, 1200/428px). No backend changes; no KPI math in TypeScript; Delivery/Commercial/Diagnostics detail stays deferred to Phases 13–15 and shared filters to Phase 15.
 
 Suggested commit: `feat(dashboard): add executive overview`
 

@@ -2,6 +2,10 @@ import type {
   ApiErrorPayload,
   CleaningReportData,
   DataQualityData,
+  KpiCommercialData,
+  KpiDeliveryData,
+  KpiOverviewData,
+  KpiResult,
   ProfileData,
   SchemaReportData,
   SessionStatusData,
@@ -12,6 +16,10 @@ export type {
   ApiErrorPayload,
   CleaningReportData,
   DataQualityData,
+  KpiCommercialData,
+  KpiDeliveryData,
+  KpiOverviewData,
+  KpiResult,
   ProfileData,
   SchemaReportData,
   SessionStatusData,
@@ -348,6 +356,103 @@ export async function fetchDataQuality(
   const { message, code, details } = envelopeError(
     payload,
     "Could not read the data-quality report.",
+  );
+  throw new ApiRequestError(response.status, message, code, details);
+}
+
+/** Read the Phase-9 headline commercial + shipment KPIs (contract shape). */
+export async function fetchKpisOverview(
+  sessionId: string,
+): Promise<KpiOverviewData> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `${API_BASE}/api/v1/sessions/${encodeURIComponent(sessionId)}/kpis/overview`,
+    );
+  } catch {
+    throw new ApiRequestError(
+      0,
+      "Could not reach the local server. Start the backend and try again.",
+    );
+  }
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  if (response.ok) {
+    return (payload as { data: KpiOverviewData }).data;
+  }
+  const { message, code, details } = envelopeError(
+    payload,
+    "Could not read the headline KPIs.",
+  );
+  throw new ApiRequestError(response.status, message, code, details);
+}
+
+/** Read Phase-9 shipment KPIs with a governed `by=` grouping (contract shape). */
+export async function fetchKpisDelivery(
+  sessionId: string,
+  by: string | null,
+): Promise<KpiDeliveryData> {
+  const query = by !== null ? `?by=${encodeURIComponent(by)}` : "";
+  let response: Response;
+  try {
+    response = await fetch(
+      `${API_BASE}/api/v1/sessions/${encodeURIComponent(sessionId)}/kpis/delivery${query}`,
+    );
+  } catch {
+    throw new ApiRequestError(
+      0,
+      "Could not reach the local server. Start the backend and try again.",
+    );
+  }
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  if (response.ok) {
+    return (payload as { data: KpiDeliveryData }).data;
+  }
+  const { message, code, details } = envelopeError(
+    payload,
+    "Could not read the shipment KPIs.",
+  );
+  throw new ApiRequestError(response.status, message, code, details);
+}
+
+/** Read Phase-9 commercial KPIs with a governed `by=` grouping (contract shape). */
+export async function fetchKpisCommercial(
+  sessionId: string,
+  by: string | null,
+): Promise<KpiCommercialData> {
+  const query = by !== null ? `?by=${encodeURIComponent(by)}` : "";
+  let response: Response;
+  try {
+    response = await fetch(
+      `${API_BASE}/api/v1/sessions/${encodeURIComponent(sessionId)}/kpis/commercial${query}`,
+    );
+  } catch {
+    throw new ApiRequestError(
+      0,
+      "Could not reach the local server. Start the backend and try again.",
+    );
+  }
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  if (response.ok) {
+    return (payload as { data: KpiCommercialData }).data;
+  }
+  const { message, code, details } = envelopeError(
+    payload,
+    "Could not read the commercial KPIs.",
   );
   throw new ApiRequestError(response.status, message, code, details);
 }

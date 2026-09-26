@@ -22,13 +22,13 @@ import UploadSession from "./components/UploadSession";
 expect.extend(matchers);
 
 const VIEW_PHASES: Array<[string, string]> = [
-  ["Overview", "Phase 12"],
   ["Delivery", "Phase 13"],
   ["Commercial", "Phase 14"],
   ["Diagnostics", "Phase 15"],
 ];
-// Data Quality left the stub set in Phase 11: it renders the real view now
-// (covered in data-quality.test.tsx), so it is asserted separately below.
+// Data Quality left the stub set in Phase 11 and Overview in Phase 12: they
+// render real views now (covered in their own test files), so they are
+// asserted separately below.
 
 describe("Phase-10 application shell", () => {
   it("navigates six governed views with the upload view active first", () => {
@@ -38,6 +38,7 @@ describe("Phase-10 application shell", () => {
     const buttons = [
       "Upload",
       "Data Quality",
+      "Overview",
       ...VIEW_PHASES.map(([label]) => label),
     ].map((label) => inNav.getByRole("button", { name: label }));
     expect(nav).toBeInTheDocument();
@@ -66,13 +67,23 @@ describe("Phase-10 application shell", () => {
     expect(screen.queryByText(/phase 11/i)).not.toBeInTheDocument();
   });
 
+  it("renders the real Overview view instead of a phase stub", () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    expect(
+      screen.getByRole("heading", { name: "Overview" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("No dataset loaded")).toBeInTheDocument();
+    expect(screen.queryByText(/phase 12/i)).not.toBeInTheDocument();
+  });
+
   it("marks future views with their owning phase and no fabricated numbers", () => {
     render(<App />);
     for (const [label, phase] of VIEW_PHASES) {
       fireEvent.click(screen.getByRole("button", { name: label }));
       expect(screen.getByText(new RegExp(`${phase}`))).toBeInTheDocument();
     }
-    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delivery" }));
     expect(screen.queryByTestId(/kpi/i)).not.toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/57\.3|42\.7|33,054,402/);
   });

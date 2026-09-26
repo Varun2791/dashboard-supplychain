@@ -34,6 +34,58 @@ export interface SessionStatusData {
   error: ApiErrorPayload | null;
 }
 
+/** One backend-computed KPI (contract shape; frontend renders, never computes). */
+export interface KpiResult {
+  id: string;
+  label: string;
+  value: number | string | null;
+  status: string;
+  numerator: number | string | null;
+  denominator: number | string | null;
+  population: string;
+  exclusions: string;
+  reason: string | null;
+  missingDataCount: number;
+}
+
+/** `GET /sessions/{id}/kpis/overview` payload (contract shape). */
+export interface KpiOverviewData {
+  kpis: KpiResult[];
+  totals: {
+    items: number;
+    orders: number;
+    eligibleOrders: number;
+    grossValue: string;
+    discountTotal: string;
+    netValue: string;
+    profitTotal: string;
+    units: number;
+  };
+}
+
+/** One `by=` slice: group key plus re-sliced KPI set (contract shape). */
+export interface KpiGroup {
+  key: string;
+  kpis: KpiResult[];
+}
+
+/** `GET /sessions/{id}/kpis/delivery` payload (contract shape). */
+export interface KpiDeliveryData {
+  groups: KpiGroup[];
+  eligibleOrders: number;
+  exclusions: string;
+}
+
+/** `GET /sessions/{id}/kpis/commercial` payload (contract shape). */
+export interface KpiCommercialData {
+  groups: KpiGroup[];
+  statusScope: string;
+  weightedRates: {
+    profitMargin: string | null;
+    discountRate: string | null;
+  };
+}
+
 /** One contract-exact mapping entry (`class` translated to fieldClass). */
 export interface SchemaFieldMapping {
   source: string;
