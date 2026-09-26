@@ -669,3 +669,84 @@ class KpiCommercialResponse(BaseModel):
     data: KpiCommercialData
     meta: EnvelopeMeta
     error: None = None
+
+
+class FilterOptionsDateRange(BaseModel):
+    """Canonical order-date extent (nullable when no order dates exist)."""
+
+    minOrderDate: str | None
+    maxOrderDate: str | None
+
+
+class FilterOptionsData(BaseModel):
+    """`GET /sessions/{id}/filter-options` payload (ADR-038, contract §3).
+
+    Session-wide, non-cascading selectable domains: markets/regions from
+    the canonical orders table, categories from the canonical items
+    table (governed facet/drilldown asymmetry). Sorted distinct
+    non-empty display values; null/empty and UNKNOWN_FLAGGED excluded.
+    """
+
+    dateRange: FilterOptionsDateRange
+    markets: list[str]
+    regions: list[str]
+    categories: list[str]
+
+
+class FilterOptionsResponse(BaseModel):
+    """Success envelope for Phase-15 open filter domains."""
+
+    data: FilterOptionsData
+    meta: EnvelopeMeta
+    error: None = None
+
+
+class OrderRow(BaseModel):
+    """One sanitized canonical order (`GET /sessions/{id}/orders` row).
+
+    ADR-038 allowlist: canonical `orders` fields only — identity, date
+    basis, status, shipment truth, and stored whole-order commercial
+    aggregates (never reaggregated partials). No `customer_id`, no
+    postal codes, no merch dims, no raw source fields.
+    """
+
+    order_id: str
+    order_timestamp: str | None
+    order_status: str | None
+    shipping_mode: str | None
+    customer_segment: str | None
+    destination_country: str | None
+    destination_region: str | None
+    destination_market: str | None
+    scheduled_shipping_days: int | None
+    actual_shipping_days: int | None
+    shipment_outcome: str | None
+    is_late: bool | None
+    line_count: int
+    total_units: int
+    gross_value: str
+    discount_total: str
+    net_value: str
+    profit_total: str
+
+
+class OrdersPage(BaseModel):
+    """Pagination cursor state: pre-pagination total plus opaque cursor."""
+
+    nextCursor: str | None
+    total: int
+
+
+class OrdersData(BaseModel):
+    """`GET /sessions/{id}/orders` payload (ADR-038, contract §3)."""
+
+    rows: list[OrderRow]
+    page: OrdersPage
+
+
+class OrdersResponse(BaseModel):
+    """Success envelope for the sanitized order drilldown."""
+
+    data: OrdersData
+    meta: EnvelopeMeta
+    error: None = None

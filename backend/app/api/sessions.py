@@ -1,5 +1,6 @@
 """Phase-9 routes: upload, status, schema, profile, data-quality, cleaning,
-KPI headline/breakdown serving, reset.
+KPI headline/breakdown serving, reset — plus the Phase-15A diagnostic
+query surfaces (filter-options, sanitized order drilldown).
 
 Handlers validate transport, call the ingestion/session services, and map
 domain errors to the typed error envelope. No supply-chain math lives here:
@@ -37,6 +38,7 @@ from app.ingestion_errors import (
     INVALID_EXTENSION,
     INVALID_FILTER_VALUE,
     INVALID_GROUPING,
+    INVALID_PAGINATION,
     INVALID_SEVERITY_FILTER,
     MALFORMED_CSV,
     NOT_READY,
@@ -66,6 +68,9 @@ from app.schemas import (
     DataQualitySummary,
     EnvelopeMeta,
     ErrorResponse,
+    FilterOptionsData,
+    FilterOptionsDateRange,
+    FilterOptionsResponse,
     KpiArtifact,
     KpiCommercialData,
     KpiCommercialResponse,
@@ -76,6 +81,10 @@ from app.schemas import (
     KpiOverviewResponse,
     KpiTotals,
     KpiWeightedRates,
+    OrderRow,
+    OrdersData,
+    OrdersPage,
+    OrdersResponse,
     ProfileResponse,
     ProfilingArtifact,
     SchemaMappingView,
@@ -93,6 +102,7 @@ from app.schemas import (
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from app.diagnostics import CursorPosition
     from app.kpis import KpiFilters, KpiTables
 
 router = APIRouter(prefix="/api/v1")
@@ -1106,6 +1116,184 @@ async def session_kpis_commercial(
             groups=groups,
             statusScope=status_scope,
             weightedRates=weighted,
+        ),
+        meta=_base_meta(
+            session_id=session_id,
+            session_state=manifest.state,
+            filters=filters.as_meta(),
+        ),
+        error=None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase-15A diagnostic query surfaces (ADR-038; no KPI/business logic here:
+# the `app.diagnostics` domain service reads the canonical tables and the
+# shared KPI filter parser owns every predicate)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/sessions/{session_id}/filter-options", response_model=FilterOptionsResponse
+)
+async def session_filter_options(session_id: str) -> FilterOptionsResponse:
+    """Selectable Phase-15 open filter domains + date extent (ADR-038).
+
+    Session-wide and non-cascading: no filter parameters are accepted, so
+    the UNFILTERED session domain is always returned.
+    """
+    from app.diagnostics import build_filter_options
+
+    manifest, _, tables = _kpi_or_raise(session_id)
+    options = build_filter_options(tables)
+    return FilterOptionsResponse(
+        data=FilterOptionsData(
+            dateRange=FilterOptionsDateRange(
+                minOrderDate=options.min_order_date.isoformat()
+                if options.min_order_date is not None
+                else None,
+                maxOrderDate=options.max_order_date.isoformat()
+                if options.max_order_date is not None
+                else None,
+            ),
+            markets=options.markets,
+            regions=options.regions,
+            categories=options.categories,
+        ),
+        meta=_base_meta(
+            session_id=session_id,
+            session_state=manifest.state,
+        ),
+        error=None,
+    )
+
+
+def _parse_orders_paging(
+    *,
+    session_id: str,
+    state: str | None,
+    limit: int | None,
+    cursor: str | None,
+) -> tuple[int, CursorPosition | None]:
+    """Validate orders pagination (contract `422 INVALID_PAGINATION`)."""
+    from app.diagnostics import decode_cursor, parse_limit
+
+    try:
+        parsed_limit = parse_limit(limit)
+    except ValueError as exc:
+        raise IngestionError(
+            INVALID_PAGINATION,
+            STAGE_ANALYZING,
+            str(exc),
+            422,
+            {"limit": limit},
+            session_id=session_id,
+            session_state=state,
+        ) from None
+    position: CursorPosition | None = None
+    if cursor is not None:
+        try:
+            position = decode_cursor(cursor)
+        except ValueError as exc:
+            raise IngestionError(
+                INVALID_PAGINATION,
+                STAGE_ANALYZING,
+                str(exc),
+                422,
+                {"cursor": "malformed"},
+                session_id=session_id,
+                session_state=state,
+            ) from None
+    return parsed_limit, position
+
+
+@router.get("/sessions/{session_id}/orders", response_model=OrdersResponse)
+async def session_orders(
+    session_id: str,
+    date_from: str | None = Query(default=None, alias="from"),
+    date_to: str | None = Query(default=None, alias="to"),
+    market: str | None = None,
+    region: str | None = None,
+    category: str | None = None,
+    shipping_mode: str | None = None,
+    order_status: str | None = None,
+    shipment_outcome: str | None = None,
+    limit: int | None = Query(default=None),
+    cursor: str | None = Query(default=None),
+) -> OrdersResponse:
+    """Bounded paginated sanitized order drilldown (ADR-038).
+
+    One row per canonical order with stored whole-order aggregates;
+    the Phase-15 shared filter subset narrows with the same predicate
+    machinery as the KPI endpoints (`department`/`customer_segment`
+    stay accepted backend parameters but are not Phase-15 UI filters,
+    so this surface does not expose them).
+    """
+    from app.diagnostics import paginate, select_orders
+
+    manifest, _, tables = _kpi_or_raise(session_id)
+    filters = _parse_kpi_filters(
+        session_id=session_id,
+        state=manifest.state,
+        date_from=date_from,
+        date_to=date_to,
+        market=market,
+        region=region,
+        category=category,
+        department=None,
+        shipping_mode=shipping_mode,
+        order_status=order_status,
+        shipment_outcome=shipment_outcome,
+        customer_segment=None,
+    )
+    parsed_limit, position = _parse_orders_paging(
+        session_id=session_id,
+        state=manifest.state,
+        limit=limit,
+        cursor=cursor,
+    )
+    records = select_orders(tables, filters)
+    try:
+        page = paginate(records, parsed_limit, position, filters)
+    except ValueError as exc:
+        raise IngestionError(
+            INVALID_PAGINATION,
+            STAGE_ANALYZING,
+            str(exc),
+            422,
+            {"cursor": "filter-context-mismatch"},
+            session_id=session_id,
+            session_state=manifest.state,
+        ) from None
+    rows = [
+        OrderRow(
+            order_id=record.order_id,
+            order_timestamp=record.order_timestamp.strftime("%Y-%m-%dT%H:%M:%S")
+            if record.order_timestamp is not None
+            else None,
+            order_status=record.order_status,
+            shipping_mode=record.shipping_mode,
+            customer_segment=record.customer_segment,
+            destination_country=record.destination_country,
+            destination_region=record.destination_region,
+            destination_market=record.destination_market,
+            scheduled_shipping_days=record.scheduled_shipping_days,
+            actual_shipping_days=record.actual_shipping_days,
+            shipment_outcome=record.shipment_outcome,
+            is_late=record.is_late,
+            line_count=record.line_count,
+            total_units=record.total_units,
+            gross_value=record.gross_value,
+            discount_total=record.discount_total,
+            net_value=record.net_value,
+            profit_total=record.profit_total,
+        )
+        for record in page.rows
+    ]
+    return OrdersResponse(
+        data=OrdersData(
+            rows=rows,
+            page=OrdersPage(nextCursor=page.next_cursor, total=page.total),
         ),
         meta=_base_meta(
             session_id=session_id,
