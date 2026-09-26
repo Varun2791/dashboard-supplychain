@@ -555,7 +555,7 @@ Suggested commit: `feat(diagnostics): add cross-filtering and operational drilld
 
 ## Phase 16 — Export and reproducibility
 
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
 ### Objective
 
@@ -563,19 +563,21 @@ Allow users to retain approved outputs and reproduce processing evidence.
 
 ### Tasks
 
-- [ ] Export sanitized cleaned items.
-- [ ] Export canonical orders.
-- [ ] Export data-quality summary and cleaning log.
-- [ ] Include schema/version and processing metadata.
-- [ ] Apply spreadsheet-injection protections to CSV exports.
-- [ ] Confirm raw personal fields never appear.
-- [ ] Document how another user obtains the public reference dataset.
+- [x] Export sanitized cleaned items.
+- [x] Export canonical orders.
+- [x] Export data-quality summary and cleaning log.
+- [x] Include schema/version and processing metadata.
+- [x] Apply spreadsheet-injection protections to CSV exports.
+- [x] Confirm raw personal fields never appear.
+- [x] Document how another user obtains the public reference dataset.
 
 ### Exit criteria
 
-- Exported counts and totals reconcile with the active dataset and filters.
-- Exports reopen correctly in common CSV tools.
-- No raw dataset or uploaded artifact enters Git.
+- [x] Exported counts and totals reconcile with the active dataset and filters.
+- [x] Exports reopen correctly in common CSV tools. — Automated CSV serialization/round-trip validation; no manual Excel verification claimed.
+- [x] No raw dataset or uploaded artifact enters Git.
+
+Evidence: four governed export kinds (`cleaned_items`, `orders`, `quality_report`, `cleaning_report`); data exports honor the shared filter vocabulary while audit reports are session-wide; CSVs carry server-side injection protection plus metadata sidecars and JSON reports embed provenance; fail-closed privacy gate with allowlists excluding personal fields; public source via ADR-041/README without redistributing bytes; acceptance T1–T7 and E1–E3 PASS; cleaning-report lifecycle defect fixed and regression-tested through CANONICALIZING, ANALYZING, and READY; final gate backend 351 passed + 1 skipped, frontend 167 passed; CI 36279439490 successful. Backend exports in `cfa192c`, lifecycle fix in `aa9aa5d`, ADR-041 in `a629601`, export UX in `69f2f8a`.
 
 Suggested commit: `feat(export): add sanitized data and quality-report exports`
 
