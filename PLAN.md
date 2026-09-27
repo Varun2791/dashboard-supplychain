@@ -248,7 +248,7 @@ Suggested commit: `feat(schema): validate and map DataCo source fields`
 
 ## Phase 6 — Data profiling and quality detection
 
-**Status: [~] partially complete (implementation done; reference-file verification pending)**
+**Status: COMPLETE**
 
 ### Objective
 
@@ -267,11 +267,13 @@ Produce a trustworthy pre-cleaning profile without modifying data.
 
 ### Exit criteria
 
-- The unmodified reference file reproduces the audited issue counts. — NOT YET EXECUTED. "Audited issue counts" means the Phase-0 audited profiling-level findings (row/grain counts, missingness/duplicates, negative-profit lines, Same-Day pattern, reconciliation evidence in DECISIONS.md), distinct from the global KPI controls owned by Phase 9 ("Complete reference calculations match `AGENTS.md` controls"). Execution needs the public reference file (ADR-024 keeps it out of the repo; no local copy exists) and is therefore pending; no counts have been fabricated. All executable detection logic is reference-ready and verified on synthetic fixtures covering every governed rule.
+- The unmodified reference file reproduces the audited issue counts. — EXECUTED. "Audited issue counts" means the Phase-0 audited profiling-level findings (row/grain counts, missingness/duplicates, negative-profit lines, Same-Day pattern, reconciliation evidence in DECISIONS.md), distinct from the global KPI controls owned by Phase 9 ("Complete reference calculations match `AGENTS.md` controls"). The external reference file (180,519 rows, SHA-256 `fa6d022ed437155e1a2f0378710602848703c8a7f203f7ff5d77805bf8480aa6`, kept out of the repo per ADR-024) reached READY with 0 errors and 0 blocking issues; no DQ-KEY-001 or DQ-GRAIN-001/003/004 blocker fired and DQ-DATE-001/002/003 did not trigger. Observed per-rule counts are reference evidence (see Evidence), not new historical controls; no counts have been fabricated. All executable detection logic is reference-ready and verified on synthetic fixtures covering every governed rule.
 - Detection results are independent from cleaning actions. — Satisfied: treatments are never `fixed`; raw SHA-256 verified byte-identical before/after; cleaning artifacts never created (derived holds only `schema_report.json` + `profiling_report.json`).
 - Every issue links to a stable rule identifier. — Satisfied: `test_profiling_rules.py` asserts catalogue parity (severity/treatment/blockedStage/fields/grain/message) for all 19 evaluated rules; 7 deferred rules are listed with reasons in the artifact.
 
 Evidence: `make check` green (frontend 22 tests, backend 145 tests, tsc, ESLint 0 errors, Ruff, mypy strict, `vite build` green), live HTTP smoke test with synthetic `/tmp` data only (clean → CLEANING + reports + stable SHA; issues → CLEANING with travelling ERRORs; malformed body → FAILED/MALFORMED_CSV + ADR-028 cleanup; reset → tree gone + 404; 9-session parallel stress converges), server log error-free.
+
+Reference run (external file per ADR-024; timestamp-compatibility fix in `0b3d2ad`): READY with rulesEvaluated 22 / triggered 11 / errors 0 / warnings 5 / infos 6 / blockingIssues 0. Triggered: DQ-KEY-002 INFO 114767, DQ-KEY-003 INFO 20757, DQ-DATE-004 INFO 9737, DQ-NUM-003 WARNING 6301, DQ-CAT-001 WARNING 39832, DQ-CAT-002 WARNING 63030, DQ-CAT-003 WARNING 54789, DQ-CAT-005 INFO 21131, DQ-BUSINESS-002 WARNING 9737, DQ-PRIVACY-001 INFO 3, DQ-PRIVACY-002 INFO 4; DQ-DATE-001/002/003 not triggered. Non-blocking unknown-enum findings remain on the governed UNKNOWN path (separate enum investigation pending; no contract change).
 
 Suggested commit: `feat(profiling): add dataset and data-quality profiling`
 
@@ -313,7 +315,7 @@ Suggested commit: `feat(cleaning): add reproducible audited transformations`
 
 ## Phase 8 — Canonical model construction
 
-**Status: [~] partially complete (implementation done; reference-file verification pending)**
+**Status: COMPLETE**
 
 ### Objective
 
@@ -332,7 +334,7 @@ Create validated order, item, product, sanitized-customer, calendar, and quality
 
 ### Exit criteria
 
-- [~] Reference output contains 180,519 items and 65,752 orders. — NOT YET EXECUTED. Same constraint as Phase 6: no local reference file exists (ADR-024); aggregation logic is verified on synthetic fixtures (multi-line orders reconcile exactly), but full-file counts await the documented reference run. No counts fabricated.
+- [x] Reference output contains 180,519 items and 65,752 orders. — EXECUTED. The external reference file (kept out of the repo per ADR-024) reached READY with 180,519 order_items, 65,752 orders (62,897 shipment-eligible, 20,652 sanitized customers, 118 products); no key/grain blocker prevented construction. Aggregation logic remains verified on synthetic fixtures (multi-line orders reconcile exactly). No counts fabricated.
 - [x] No order total is multiplied by its line count. — Aggregations sum line values exactly once; `line_count` is a separate count; multi-line fixture asserts `net_value == 47.48 == 27.98 + 19.50`.
 - [x] All canonical foreign keys reconcile. — GRAIN-002 self-check (order-ID set equality + lines count + money/unit totals) enforced before ANALYZING; `test_report_reconciliation_and_identity` asserts all-true.
 - [x] Privacy-excluded fields are absent from analytical payloads. — PII/precise-geo/audit-only columns never materialize; probe tests assert absence in all six tables + report; exports untouched (Phase 16).
@@ -345,7 +347,7 @@ Suggested commit: `feat(model): build canonical supply-chain data model`
 
 ## Phase 9 — KPI engine
 
-**Status: [~] partially complete (implementation done; reference-file verification pending)**
+**Status: COMPLETE**
 
 ### Objective
 
@@ -362,12 +364,12 @@ Implement one tested source of truth for every V1 KPI.
 - [x] Implement strict cancellation and suspected-fraud rates separately. — Plus the combined shipping-blocked rate, all at order grain (ADR-013).
 - [x] Support dimensional breakdowns without changing KPI contracts. — `GET /kpis/delivery` and `/kpis/commercial` with validated filters and `by=` grouping re-slicing numerator/denominator under identical formulas; `UNKNOWN_FLAGGED` excluded from splits (ADR-030); unknown enums rejected 422, never mapped.
 - [x] Return unavailable results for empty eligible populations. — Pinned reason vocabulary (`empty-eligible-population | zero-denominator | missing-required-fields`), never 0/0% (ADR-031).
-- [~] Reconcile the complete DataCo controls. — NOT YET EXECUTED. Same constraint as Phases 6/8: no local reference file exists (ADR-024). The harness is in place (`backend/tests/test_kpi_reference.py`: always-runnable synthetic golden + `SUPPLYCHAIN_REFERENCE_CSV`-gated reference test asserting every `AGENTS.md` control, skipped in CI). No counts fabricated, no production constants (ADR-020).
+- [x] Reconcile the complete DataCo controls. — EXECUTED against the external reference file (kept out of the repo per ADR-024): `test_dataco_reference_controls` passed (1 passed in 63.90s); every `AGENTS.md` control reconciled with zero difference (items 180,519; orders 65,752; eligible 62,897; customers 20,652; products 118; units 384,079; late 36,048; early 15,127; exact 11,722; shipping-cancelled 2,855 = strict 1,367 + fraud 1,488; gross `36784735.01`; discount `3730378.40`; recorded net order value `33054402.38`; recorded profit `3966902.97`; late/on-schedule rates within committed tolerances). The harness remains in place (`backend/tests/test_kpi_reference.py`: always-runnable synthetic golden + `SUPPLYCHAIN_REFERENCE_CSV`-gated reference test asserting every `AGENTS.md` control, skipped in CI). No counts fabricated, no production constants (ADR-020).
 
 ### Exit criteria
 
 - [x] All KPI contract tests pass. — 30 KPI IDs/labels pinned against `docs/kpi-contracts.md`; 44 new Phase-9 tests (formulas, adversarial delivery/commercial, lifecycle, endpoints, golden).
-- [~] Complete reference calculations match `AGENTS.md` controls. — Pending the documented reference run (see task above).
+- [x] Complete reference calculations match `AGENTS.md` controls. — Satisfied by the executed reference run (see task above).
 - [x] Filtered totals reconcile with their underlying populations. — Overview `totals` anchors; group numerators reconcile to headlines (tested); filtered recomputation is synchronous from cached canonical tables.
 - [x] No frontend calculation is required to obtain a KPI. — Backend owns all math; frontend change is a minimal READY/settle note only (no KPI fetching, no formulas in TypeScript).
 
