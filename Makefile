@@ -1,5 +1,5 @@
 .PHONY: install-frontend install-backend install dev-frontend dev-backend \
-	test-frontend test-backend lint typecheck format-check check
+	test-frontend test-backend lint typecheck format-check check benchmark-small
 
 install-frontend: ## Install frontend dependencies from the lockfile
 	cd frontend && npm ci
@@ -35,3 +35,6 @@ format-check: ## Verify formatting (Prettier + Ruff format)
 	cd backend && uv run ruff format --check .
 
 check: lint typecheck format-check test-frontend test-backend ## Run all required checks
+
+benchmark-small: ## Run the SMALL synthetic benchmark (ADR-042; scratch only, nothing committed)
+	cd backend && uv run python -m benchmarks.run --tier small
