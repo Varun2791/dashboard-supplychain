@@ -175,11 +175,13 @@ CUSTOMER_SEGMENT_VALUES: Final = frozenset({"Consumer", "Home Office"})
 SAME_DAY_SOURCE_VALUE: Final = "Same Day"
 
 # Explicit month-first timestamp formats, timezone-naive. No day-first,
-# no locale guessing.
+# no locale guessing. `%m/%d/%Y %H:%M` is the DataCo reference source
+# grammar (non-zero-padded components accepted by strptime directives).
 TIMESTAMP_FORMATS: Final = (
     "%m-%d-%Y %H:%M:%S",
     "%m-%d-%Y %H:%M",
     "%m-%d-%Y",
+    "%m/%d/%Y %H:%M",
 )
 
 NET_TOLERANCE: Final = Decimal("0.05")

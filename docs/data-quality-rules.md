@@ -54,6 +54,12 @@ Pipeline stages referenced: `INGESTION · SCHEMA_MAPPING · PROFILING · CLEANIN
 
 ### DQ-DATE — dates (block per row-population, not whole file unless critical)
 
+Source timestamps are parsed month-first against an explicit allowlist of
+supported source grammars: `%m-%d-%Y %H:%M:%S`, `%m-%d-%Y %H:%M`, `%m-%d-%Y`,
+and the DataCo reference grammar `%m/%d/%Y %H:%M`. There is no locale or fuzzy
+inference; values outside the allowlist (including impossible calendar dates)
+remain governed DQ-DATE-001/002 findings.
+
 | Rule | Name | Detection logic | Severity | Blocks | Treatment | Auto-transform |
 |---|---|---|---|---|---|---|
 | DQ-DATE-001 | Order timestamp parseable | month-first parse of `order date (DateOrders)` fails | ERROR | KPI_ANALYSIS for affected rows (rows excluded from date-binned KPIs; file-wide failure — the upload contains data rows but zero parseable governed order timestamps — blocks CANONICALIZATION) | flagged | no |
