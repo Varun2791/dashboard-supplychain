@@ -460,6 +460,40 @@ describe("Phase-15B shared analytics filters", () => {
     ).toBeGreaterThan(0);
   });
 
+  it("distinguishes All/default from actively filtered without color alone", async () => {
+    renderSeeded(snapshotFor(SESSION_A, "READY"));
+    await openOverview();
+    const heading = screen.getByRole("heading", { name: /analytics filters/i });
+    expect(heading).toHaveTextContent("· all");
+    await waitFor(() => {
+      const values = Array.from(
+        (screen.getByLabelText("Market") as HTMLSelectElement).options,
+      ).map((option) => option.value);
+      expect(values).toContain("M1");
+    });
+    fireEvent.change(screen.getByLabelText("Market"), {
+      target: { value: "M1" },
+    });
+    expect(screen.getByLabelText("Market")).toHaveValue("M1");
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", { name: /analytics filters/i }),
+      ).toHaveTextContent("· filtered");
+    });
+    // Non-color distinction: explicit selected value, semibold active marker
+    // via data-active, and a named per-filter clear control.
+    expect(screen.getByLabelText("Market")).toHaveValue("M1");
+    expect(
+      screen.getByLabelText("Market").closest("[data-active]"),
+    ).toHaveAttribute("data-active", "true");
+    expect(
+      screen.getByLabelText("Region").closest("[data-active]"),
+    ).toHaveAttribute("data-active", "false");
+    expect(
+      screen.getByRole("button", { name: /clear market filter/i }),
+    ).toBeInTheDocument();
+  });
+
   it("leaves Data Quality unaffected by analytics filters", async () => {
     renderSeeded(snapshotFor(SESSION_A, "READY"));
     await openOverview();

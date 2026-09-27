@@ -379,6 +379,39 @@ describe("Phase-12 Executive Overview", () => {
     expect(screen.queryByText(/data error/i)).not.toBeInTheDocument();
   });
 
+  it("consolidates definitions into one shared disclosure without loss", async () => {
+    renderSeeded(snapshotFor(SESSION_A, "READY"));
+    goToOverview();
+    await screen.findAllByText("Recorded net order value");
+    const disclosure = screen.getByText(
+      /definitions & populations for these headline results/i,
+    );
+    expect(disclosure.tagName.toLowerCase()).toBe("summary");
+    fireEvent.click(disclosure);
+    // Every headline KPI keeps its label, population, and exclusions inside
+    // the shared disclosure; unavailable reasons stay on the strip itself.
+    for (const id of [
+      "kpi.value.net",
+      "kpi.profit.recorded",
+      "kpi.margin.profit",
+      "kpi.ship.late_rate",
+      "kpi.ship.on_schedule_rate",
+      "kpi.orders.count",
+      "kpi.orders.shipment_eligible_count",
+      "kpi.units.total",
+    ]) {
+      expect(disclosure.closest("details")).toHaveTextContent(
+        `Population for ${id}.`,
+      );
+      expect(disclosure.closest("details")).toHaveTextContent(
+        `Exclusions for ${id}.`,
+      );
+    }
+    expect(
+      screen.getByRole("list", { name: "Headline results" }),
+    ).toHaveTextContent("zero-denominator");
+  });
+
   it("renders the monthly trend with an accessible data table", async () => {
     renderSeeded(snapshotFor(SESSION_A, "READY"));
     goToOverview();

@@ -29,12 +29,8 @@ import {
   chartPalette,
   chartTickFontSize,
 } from "@/lib/chart-theme";
-import {
-  CARD_MEANINGS,
-  OVERVIEW_CARD_IDS,
-  formatKpiValue,
-} from "@/lib/kpi-format";
-import { KpiDefinition } from "@/components/patterns";
+import { OVERVIEW_CARD_IDS, formatKpiValue } from "@/lib/kpi-format";
+import { KpiStrip, KpiStripDefinitions } from "@/components/KpiStrip";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import FilterBar from "@/components/FilterBar";
 import { useAnalyticsFilters } from "@/lib/analytics-filters";
@@ -84,42 +80,6 @@ function toPlottable(value: number | string | null): number | null {
 
 function findKpi(kpis: KpiResult[], id: string): KpiResult | null {
   return kpis.find((kpi) => kpi.id === id) ?? null;
-}
-
-export function KpiCard({ kpi }: { kpi: KpiResult }) {
-  const unavailable = kpi.status !== "ok" || kpi.value === null;
-  const value: number | string | null = kpi.value;
-  const missingNote =
-    kpi.missingDataCount > 0
-      ? `${kpi.missingDataCount} rows excluded for missing fields`
-      : null;
-  return (
-    <div className="flex flex-col gap-1 rounded-lg border p-4">
-      <p className="text-sm font-medium">{kpi.label}</p>
-      {unavailable || value === null ? (
-        <p className="text-sm text-muted-foreground" role="status">
-          Unavailable
-          {kpi.reason !== null && kpi.reason !== "" ? ` — ${kpi.reason}` : ""}
-          {missingNote !== null ? ` (${missingNote})` : ""}
-        </p>
-      ) : (
-        <>
-          <p className="text-2xl font-semibold tracking-tight">
-            {formatKpiValue(kpi.id, value)}
-          </p>
-          {missingNote !== null ? (
-            <p className="text-sm text-muted-foreground">({missingNote})</p>
-          ) : null}
-        </>
-      )}
-      <KpiDefinition
-        term={kpi.label}
-        meaning={CARD_MEANINGS[kpi.id] ?? "Governed headline KPI."}
-        population={kpi.population}
-        exclusions={kpi.exclusions}
-      />
-    </div>
-  );
 }
 
 function ScrollTable({
@@ -610,10 +570,12 @@ export default function OverviewView() {
           Amounts are neutral units; currency is unspecified. Rates show one
           decimal.
         </p>
-        <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {cards.map((kpi) => (
-            <KpiCard key={kpi.id} kpi={kpi} />
-          ))}
+        <div className="mt-2">
+          <KpiStrip kpis={cards} label="Headline results" />
+          <KpiStripDefinitions
+            kpis={cards}
+            summary="Definitions & populations for these headline results"
+          />
         </div>
       </section>
       <TrendChart trend={reports.trend} />

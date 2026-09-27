@@ -27,7 +27,7 @@ import {
   chartTickFontSize,
 } from "@/lib/chart-theme";
 import { formatKpiValue } from "@/lib/kpi-format";
-import { KpiCard } from "@/components/OverviewView";
+import { KpiStrip, KpiStripDefinitions } from "@/components/KpiStrip";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import FilterBar from "@/components/FilterBar";
 import { useAnalyticsFilters } from "@/lib/analytics-filters";
@@ -539,10 +539,12 @@ export default function CommercialView() {
           recalculation. Amounts show two decimals with no currency; rates show
           one decimal. Negative recorded profit is retained, never clipped.
         </p>
-        <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {headlines.map((kpi) => (
-            <KpiCard key={kpi.id} kpi={kpi} />
-          ))}
+        <div className="mt-2">
+          <KpiStrip kpis={headlines} label="Recorded commercial value" />
+          <KpiStripDefinitions
+            kpis={headlines}
+            summary="Definitions & populations for recorded commercial value"
+          />
         </div>
       </section>
       <section aria-labelledby="commercial-association-heading">
@@ -556,10 +558,12 @@ export default function CommercialView() {
           Net order value on late-shipment orders describes association only —
           it is never lost sales, and lateness never explains profit.
         </p>
-        <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {association.map((kpi) => (
-            <KpiCard key={kpi.id} kpi={kpi} />
-          ))}
+        <div className="mt-2">
+          <KpiStrip kpis={association} label="Late-associated value context" />
+          <KpiStripDefinitions
+            kpis={association}
+            summary="Definitions & populations for late-associated value"
+          />
         </div>
       </section>
       <BreakdownSection

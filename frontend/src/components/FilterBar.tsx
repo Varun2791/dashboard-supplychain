@@ -43,19 +43,29 @@ export default function FilterBar({ idPrefix }: { idPrefix: string }) {
     filters.from > filters.to;
 
   return (
-    <section aria-label="Analytics filters" className="rounded-lg border p-4">
+    <section
+      aria-label="Analytics filters"
+      className="rounded-lg border border-border bg-card px-3 py-2.5"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold">Analytics filters</h3>
+        <h3 className="font-analytical text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+          Analytics filters
+          {isFiltered(filters) ? (
+            <span className="text-foreground"> · filtered</span>
+          ) : (
+            <span> · all</span>
+          )}
+        </h3>
         <button
           type="button"
           onClick={resetFilters}
           disabled={!isFiltered(filters)}
-          className="rounded-md border px-2 py-1 text-sm disabled:opacity-50"
+          className="font-analytical rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
         >
           Reset filters
         </button>
       </div>
-      <p className="mt-1 text-sm text-muted-foreground">
+      <p className="mt-1 text-[11px] text-muted-foreground">
         Filters apply to Overview, Delivery, Commercial, and Diagnostics. Data
         Quality always describes the whole session.
       </p>
@@ -64,40 +74,56 @@ export default function FilterBar({ idPrefix }: { idPrefix: string }) {
           {openNote}
         </p>
       ) : null}
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-3">
-        <div className="flex flex-col gap-1">
-          <label htmlFor={`${idPrefix}-from`} className="text-sm font-medium">
-            From (order date)
-          </label>
-          <input
-            id={`${idPrefix}-from`}
-            type="date"
-            className="rounded-md border bg-background px-2 py-1 text-sm"
-            value={filters.from ?? ""}
-            min={options?.dateRange.minOrderDate ?? undefined}
-            max={options?.dateRange.maxOrderDate ?? undefined}
-            onChange={(event) => {
-              const next = event.target.value;
-              setFilter("from", next === "" ? null : next);
-            }}
-          />
+      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-3 lg:grid-cols-4">
+        <div
+          className="filter-field flex min-w-0 items-end gap-1.5"
+          data-active={filters.from != null && filters.from !== ""}
+        >
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <label
+              htmlFor={`${idPrefix}-from`}
+              className="font-analytical text-[11px] font-medium tracking-wide text-muted-foreground uppercase"
+            >
+              From (order date)
+            </label>
+            <input
+              id={`${idPrefix}-from`}
+              type="date"
+              className="filter-control rounded-md border border-border bg-background px-2 py-1 text-[13px]"
+              value={filters.from ?? ""}
+              min={options?.dateRange.minOrderDate ?? undefined}
+              max={options?.dateRange.maxOrderDate ?? undefined}
+              onChange={(event) => {
+                const next = event.target.value;
+                setFilter("from", next === "" ? null : next);
+              }}
+            />
+          </div>
         </div>
-        <div className="flex flex-col gap-1">
-          <label htmlFor={`${idPrefix}-to`} className="text-sm font-medium">
-            To (order date)
-          </label>
-          <input
-            id={`${idPrefix}-to`}
-            type="date"
-            className="rounded-md border bg-background px-2 py-1 text-sm"
-            value={filters.to ?? ""}
-            min={options?.dateRange.minOrderDate ?? undefined}
-            max={options?.dateRange.maxOrderDate ?? undefined}
-            onChange={(event) => {
-              const next = event.target.value;
-              setFilter("to", next === "" ? null : next);
-            }}
-          />
+        <div
+          className="filter-field flex min-w-0 items-end gap-1.5"
+          data-active={filters.to != null && filters.to !== ""}
+        >
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <label
+              htmlFor={`${idPrefix}-to`}
+              className="font-analytical text-[11px] font-medium tracking-wide text-muted-foreground uppercase"
+            >
+              To (order date)
+            </label>
+            <input
+              id={`${idPrefix}-to`}
+              type="date"
+              className="filter-control rounded-md border border-border bg-background px-2 py-1 text-[13px]"
+              value={filters.to ?? ""}
+              min={options?.dateRange.minOrderDate ?? undefined}
+              max={options?.dateRange.maxOrderDate ?? undefined}
+              onChange={(event) => {
+                const next = event.target.value;
+                setFilter("to", next === "" ? null : next);
+              }}
+            />
+          </div>
         </div>
         <FilterSelect
           id={`${idPrefix}-market`}

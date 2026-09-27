@@ -213,6 +213,20 @@
   }
 }
 
+/* Compact analytical filter fields: active state never relies on color
+ * alone — accent border + tinted surface + semibold control text, while the
+ * explicit selected value and per-filter clear control remain visible. */
+@layer components {
+  .filter-field .filter-control {
+    font-weight: 400;
+  }
+  .filter-field[data-active="true"] .filter-control {
+    font-weight: 600;
+    border-color: var(--accent-blue);
+    background: color-mix(in oklch, var(--accent-blue) 10%, transparent);
+  }
+}
+
 /* Compact operational status marker: color carries state, text keeps the
  * governed state name. No animation, no invented states. */
 .session-dot {

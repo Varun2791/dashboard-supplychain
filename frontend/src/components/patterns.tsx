@@ -20,7 +20,7 @@ interface FilterSelectProps {
   disabled?: boolean;
 }
 
-/** Labeled single-value filter with an explicit clear action. */
+/** Compact analytical labeled single-value filter with explicit clear. */
 export function FilterSelect({
   id,
   label,
@@ -29,15 +29,22 @@ export function FilterSelect({
   onChange,
   disabled = false,
 }: FilterSelectProps) {
+  const active = value !== null && value !== "";
   return (
-    <div className="flex flex-wrap items-end gap-2">
-      <div className="flex flex-col gap-1">
-        <label htmlFor={id} className="text-sm font-medium">
+    <div
+      className="filter-field flex min-w-0 items-end gap-1.5"
+      data-active={active}
+    >
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <label
+          htmlFor={id}
+          className="font-analytical text-[11px] font-medium tracking-wide text-muted-foreground uppercase"
+        >
           {label}
         </label>
         <select
           id={id}
-          className="rounded-md border bg-background px-2 py-1 text-sm"
+          className="filter-control max-w-44 truncate rounded-md border border-border bg-background px-2 py-1 text-[13px]"
           value={value ?? ""}
           disabled={disabled}
           onChange={(event) => {
@@ -53,15 +60,15 @@ export function FilterSelect({
           ))}
         </select>
       </div>
-      {value !== null && value !== "" ? (
+      {active ? (
         <button
           type="button"
-          className="rounded-md border px-2 py-1 text-sm"
+          className="font-analytical rounded-md border border-border px-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground"
           disabled={disabled}
           onClick={() => onChange(null)}
           aria-label={`Clear ${label} filter`}
         >
-          Clear
+          ✕
         </button>
       ) : null}
     </div>

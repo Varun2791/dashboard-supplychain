@@ -27,7 +27,7 @@ import {
   chartTickFontSize,
 } from "@/lib/chart-theme";
 import { formatKpiValue } from "@/lib/kpi-format";
-import { KpiCard } from "@/components/OverviewView";
+import { KpiStrip, KpiStripDefinitions } from "@/components/KpiStrip";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import FilterBar from "@/components/FilterBar";
 import { useAnalyticsFilters } from "@/lib/analytics-filters";
@@ -564,10 +564,12 @@ export default function DeliveryView() {
           Outcomes come from authoritative shipping-day fields. Rates show one
           decimal; day averages show two.
         </p>
-        <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {headlines.map((kpi) => (
-            <KpiCard key={kpi.id} kpi={kpi} />
-          ))}
+        <div className="mt-2">
+          <KpiStrip kpis={headlines} label="Shipment schedule adherence" />
+          <KpiStripDefinitions
+            kpis={headlines}
+            summary="Definitions & populations for schedule adherence"
+          />
         </div>
       </section>
       <section aria-labelledby="delivery-context-heading">
@@ -578,10 +580,15 @@ export default function DeliveryView() {
           Strict cancellations and suspected fraud stay separate from schedule
           adherence and from each other; lateness never implies fraud.
         </p>
-        <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {context.map((kpi) => (
-            <KpiCard key={kpi.id} kpi={kpi} />
-          ))}
+        <div className="mt-2">
+          <KpiStrip
+            kpis={context}
+            label="Cancellation and suspected-fraud context"
+          />
+          <KpiStripDefinitions
+            kpis={context}
+            summary="Definitions & populations for cancellation and fraud context"
+          />
         </div>
       </section>
       <BreakdownSection
