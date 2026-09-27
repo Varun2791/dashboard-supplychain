@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
 import {
   Bar,
   BarChart,
@@ -22,11 +21,19 @@ import type {
   KpiResult,
 } from "@/lib/api";
 import {
+  chartAxisLine,
+  chartBarCursor,
+  chartGridProps,
+  chartIsAnimationActive,
+  chartLegendProps,
   chartMargins,
-  chartPalette,
-  chartTickFontSize,
+  chartNumericTick,
+  chartSeries,
+  chartTick,
+  chartTooltipProps,
 } from "@/lib/chart-theme";
 import { formatKpiValue } from "@/lib/kpi-format";
+import { AnalyticalTable } from "@/components/AnalyticalTable";
 import { KpiStrip, KpiStripDefinitions } from "@/components/KpiStrip";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import FilterBar from "@/components/FilterBar";
@@ -116,22 +123,6 @@ function cellText(kpi: KpiResult | null): string {
   return formatKpiValue(kpi.id, kpi.value);
 }
 
-function ScrollTable({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="overflow-x-auto rounded-lg border">
-      <table aria-label={label} className="w-full text-sm">
-        {children}
-      </table>
-    </div>
-  );
-}
-
 function GroupTable({
   dimension,
   groups,
@@ -141,75 +132,49 @@ function GroupTable({
 }) {
   return (
     <div className="mt-2">
-      <ScrollTable label={`Late-shipment rate by ${dimension}`}>
+      <AnalyticalTable label={`Late-shipment rate by ${dimension}`}>
         <thead>
-          <tr className="border-b text-left">
-            <th scope="col" className="px-3 py-2 font-medium">
-              {dimension}
-            </th>
-            <th scope="col" className="px-3 py-2 font-medium">
-              Late-shipment rate
-            </th>
-            <th scope="col" className="px-3 py-2 font-medium">
-              Late (count)
-            </th>
-            <th scope="col" className="px-3 py-2 font-medium">
-              Early (count)
-            </th>
-            <th scope="col" className="px-3 py-2 font-medium">
-              Exactly on schedule (count)
-            </th>
-            <th scope="col" className="px-3 py-2 font-medium">
-              Eligible (count)
-            </th>
-            <th scope="col" className="px-3 py-2 font-medium">
-              Avg actual (days)
-            </th>
-            <th scope="col" className="px-3 py-2 font-medium">
-              Avg scheduled (days)
-            </th>
-            <th scope="col" className="px-3 py-2 font-medium">
-              Variance (days)
-            </th>
+          <tr>
+            <th scope="col">{dimension}</th>
+            <th scope="col">Late-shipment rate</th>
+            <th scope="col">Late (count)</th>
+            <th scope="col">Early (count)</th>
+            <th scope="col">Exactly on schedule (count)</th>
+            <th scope="col">Eligible (count)</th>
+            <th scope="col">Avg actual (days)</th>
+            <th scope="col">Avg scheduled (days)</th>
+            <th scope="col">Variance (days)</th>
           </tr>
         </thead>
         <tbody>
           {groups.map((group) => {
             const eligible = groupEligible(group);
             return (
-              <tr key={group.key} className="border-b last:border-0">
-                <td className="px-3 py-2">{group.key}</td>
-                <td className="px-3 py-2">
-                  {cellText(findKpi(group.kpis, "kpi.ship.late_rate"))}
-                </td>
-                <td className="px-3 py-2">
-                  {cellText(findKpi(group.kpis, "kpi.ship.late_count"))}
-                </td>
-                <td className="px-3 py-2">
-                  {cellText(findKpi(group.kpis, "kpi.ship.early_count"))}
-                </td>
-                <td className="px-3 py-2">
-                  {cellText(findKpi(group.kpis, "kpi.ship.exact_count"))}
-                </td>
-                <td className="px-3 py-2">
+              <tr key={group.key}>
+                <td>{group.key}</td>
+                <td>{cellText(findKpi(group.kpis, "kpi.ship.late_rate"))}</td>
+                <td>{cellText(findKpi(group.kpis, "kpi.ship.late_count"))}</td>
+                <td>{cellText(findKpi(group.kpis, "kpi.ship.early_count"))}</td>
+                <td>{cellText(findKpi(group.kpis, "kpi.ship.exact_count"))}</td>
+                <td>
                   {eligible === null
                     ? "Unavailable"
                     : eligible.toLocaleString("en-US")}
                 </td>
-                <td className="px-3 py-2">
+                <td>
                   {cellText(findKpi(group.kpis, "kpi.ship.avg_actual_days"))}
                 </td>
-                <td className="px-3 py-2">
+                <td>
                   {cellText(findKpi(group.kpis, "kpi.ship.avg_scheduled_days"))}
                 </td>
-                <td className="px-3 py-2">
+                <td>
                   {cellText(findKpi(group.kpis, "kpi.ship.variance_days"))}
                 </td>
               </tr>
             );
           })}
         </tbody>
-      </ScrollTable>
+      </AnalyticalTable>
     </div>
   );
 }
@@ -251,19 +216,31 @@ function LateRateChart({
       >
         <ResponsiveContainer width="100%" height={240}>
           <BarChart data={rows} margin={{ ...chartMargins, left: 32 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="group" tick={{ fontSize: chartTickFontSize }} />
+            <CartesianGrid {...chartGridProps} />
+            <XAxis
+              dataKey="group"
+              tick={chartTick}
+              tickLine={false}
+              axisLine={chartAxisLine}
+            />
             <YAxis
-              tick={{ fontSize: chartTickFontSize }}
+              tick={chartNumericTick}
+              tickLine={false}
+              axisLine={chartAxisLine}
               width={48}
               tickFormatter={(value: number) => `${value}%`}
             />
-            <Tooltip formatter={(value) => `${value}%`} />
-            <Legend />
+            <Tooltip
+              {...chartTooltipProps}
+              cursor={chartBarCursor}
+              formatter={(value) => `${value}%`}
+            />
+            <Legend {...chartLegendProps} />
             <Bar
               dataKey="rate"
               name="Late-shipment rate (%)"
-              fill={chartPalette[3]}
+              fill={chartSeries.primary}
+              isAnimationActive={chartIsAnimationActive}
             />
           </BarChart>
         </ResponsiveContainer>

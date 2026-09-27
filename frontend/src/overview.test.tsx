@@ -428,6 +428,18 @@ describe("Phase-12 Executive Overview", () => {
     expect(table).toHaveTextContent("Unavailable");
   });
 
+  it("keeps negative monthly profit negative in the trend table", async () => {
+    renderSeeded(snapshotFor(SESSION_A, "READY"));
+    goToOverview();
+    const table = await screen.findByRole("table", {
+      name: /monthly net order value and profit/i,
+    });
+    // February profit is negative backend data: position below zero, never
+    // an error state and never clipped to zero.
+    expect(table).toHaveTextContent("-145.67");
+    expect(table).not.toHaveTextContent("data error");
+  });
+
   it("renders the shipment outcome distribution with eligible context", async () => {
     renderSeeded(snapshotFor(SESSION_A, "READY"));
     goToOverview();

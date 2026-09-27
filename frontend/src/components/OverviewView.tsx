@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
 import {
   Bar,
   BarChart,
@@ -7,6 +6,7 @@ import {
   Legend,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -25,12 +25,21 @@ import type {
   KpiResult,
 } from "@/lib/api";
 import {
+  chartAxisLine,
+  chartBarCursor,
+  chartGridProps,
+  chartIsAnimationActive,
+  chartLegendProps,
+  chartLineCursor,
   chartMargins,
-  chartPalette,
-  chartTickFontSize,
+  chartNumericTick,
+  chartSeries,
+  chartTick,
+  chartTooltipProps,
 } from "@/lib/chart-theme";
 import { OVERVIEW_CARD_IDS, formatKpiValue } from "@/lib/kpi-format";
 import { KpiStrip, KpiStripDefinitions } from "@/components/KpiStrip";
+import { AnalyticalTable } from "@/components/AnalyticalTable";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import FilterBar from "@/components/FilterBar";
 import { useAnalyticsFilters } from "@/lib/analytics-filters";
@@ -82,22 +91,6 @@ function findKpi(kpis: KpiResult[], id: string): KpiResult | null {
   return kpis.find((kpi) => kpi.id === id) ?? null;
 }
 
-function ScrollTable({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="overflow-x-auto rounded-lg border">
-      <table aria-label={label} className="w-full text-sm">
-        {children}
-      </table>
-    </div>
-  );
-}
-
 function TrendChart({ trend }: { trend: KpiCommercialData }) {
   const rows = trend.groups.map((group) => {
     const net = findKpi(group.kpis, "kpi.value.net");
@@ -137,29 +130,39 @@ function TrendChart({ trend }: { trend: KpiCommercialData }) {
           >
             <ResponsiveContainer width="100%" height={260}>
               <LineChart data={rows} margin={{ ...chartMargins, left: 48 }}>
-                <CartesianGrid strokeDasharray="3 3" />
+                <CartesianGrid {...chartGridProps} />
                 <XAxis
                   dataKey="month"
-                  tick={{ fontSize: chartTickFontSize }}
+                  tick={chartTick}
+                  tickLine={false}
+                  axisLine={chartAxisLine}
                   interval="preserveStartEnd"
                 />
-                <YAxis tick={{ fontSize: chartTickFontSize }} width={56} />
-                <Tooltip />
-                <Legend />
+                <YAxis
+                  tick={chartNumericTick}
+                  tickLine={false}
+                  axisLine={chartAxisLine}
+                  width={56}
+                />
+                <Tooltip {...chartTooltipProps} cursor={chartLineCursor} />
+                <Legend {...chartLegendProps} />
+                <ReferenceLine y={0} stroke="var(--border)" />
                 <Line
                   type="monotone"
                   dataKey="net"
                   name="Recorded net order value"
-                  stroke={chartPalette[0]}
+                  stroke={chartSeries.primary}
                   dot={false}
+                  isAnimationActive={chartIsAnimationActive}
                 />
                 <Line
                   type="monotone"
                   dataKey="profit"
                   name="Recorded profit"
-                  stroke={chartPalette[1]}
+                  stroke={chartSeries.secondary}
                   strokeDasharray="5 3"
                   dot={false}
+                  isAnimationActive={chartIsAnimationActive}
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -175,25 +178,19 @@ function TrendChart({ trend }: { trend: KpiCommercialData }) {
           Monthly values as a table
         </summary>
         <div className="mt-2">
-          <ScrollTable label="Monthly net order value and profit">
+          <AnalyticalTable label="Monthly net order value and profit">
             <thead>
-              <tr className="border-b text-left">
-                <th scope="col" className="px-3 py-2 font-medium">
-                  Order month
-                </th>
-                <th scope="col" className="px-3 py-2 font-medium">
-                  Recorded net order value
-                </th>
-                <th scope="col" className="px-3 py-2 font-medium">
-                  Recorded profit
-                </th>
+              <tr>
+                <th scope="col">Order month</th>
+                <th scope="col">Recorded net order value</th>
+                <th scope="col">Recorded profit</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.month} className="border-b last:border-0">
-                  <td className="px-3 py-2">{row.month}</td>
-                  <td className="px-3 py-2">
+                <tr key={row.month}>
+                  <td>{row.month}</td>
+                  <td>
                     {row.net === null
                       ? "Unavailable"
                       : row.net.toLocaleString("en-US", {
@@ -201,7 +198,7 @@ function TrendChart({ trend }: { trend: KpiCommercialData }) {
                           maximumFractionDigits: 2,
                         })}
                   </td>
-                  <td className="px-3 py-2">
+                  <td>
                     {row.profit === null
                       ? "Unavailable"
                       : row.profit.toLocaleString("en-US", {
@@ -212,7 +209,7 @@ function TrendChart({ trend }: { trend: KpiCommercialData }) {
                 </tr>
               ))}
             </tbody>
-          </ScrollTable>
+          </AnalyticalTable>
         </div>
       </details>
     </section>
@@ -259,21 +256,26 @@ function OutcomeDistribution({
           >
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={rows} margin={{ ...chartMargins, left: 48 }}>
-                <CartesianGrid strokeDasharray="3 3" />
+                <CartesianGrid {...chartGridProps} />
                 <XAxis
                   dataKey="outcome"
-                  tick={{ fontSize: chartTickFontSize }}
+                  tick={chartTick}
+                  tickLine={false}
+                  axisLine={chartAxisLine}
                 />
                 <YAxis
-                  tick={{ fontSize: chartTickFontSize }}
+                  tick={chartNumericTick}
+                  tickLine={false}
+                  axisLine={chartAxisLine}
                   width={56}
                   allowDecimals={false}
                 />
-                <Tooltip />
+                <Tooltip {...chartTooltipProps} cursor={chartBarCursor} />
                 <Bar
                   dataKey="count"
                   name="Orders (count)"
-                  fill={chartPalette[2]}
+                  fill={chartSeries.primary}
+                  isAnimationActive={chartIsAnimationActive}
                 />
               </BarChart>
             </ResponsiveContainer>
@@ -315,26 +317,22 @@ function RegionPerformance({ region }: { region: KpiCommercialData }) {
         </p>
       ) : (
         <div className="mt-2">
-          <ScrollTable label="Recorded net order value by destination region">
+          <AnalyticalTable label="Recorded net order value by destination region">
             <thead>
-              <tr className="border-b text-left">
-                <th scope="col" className="px-3 py-2 font-medium">
-                  Destination region
-                </th>
-                <th scope="col" className="px-3 py-2 font-medium">
-                  Recorded net order value
-                </th>
+              <tr>
+                <th scope="col">Destination region</th>
+                <th scope="col">Recorded net order value</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.region} className="border-b last:border-0">
-                  <td className="px-3 py-2">{row.region}</td>
-                  <td className="px-3 py-2">{row.net}</td>
+                <tr key={row.region}>
+                  <td>{row.region}</td>
+                  <td>{row.net}</td>
                 </tr>
               ))}
             </tbody>
-          </ScrollTable>
+          </AnalyticalTable>
         </div>
       )}
     </section>

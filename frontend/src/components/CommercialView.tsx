@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
 import {
   Bar,
   BarChart,
@@ -22,11 +21,19 @@ import type {
   KpiResult,
 } from "@/lib/api";
 import {
+  chartAxisLine,
+  chartBarCursor,
+  chartGridProps,
+  chartIsAnimationActive,
+  chartLegendProps,
   chartMargins,
-  chartPalette,
-  chartTickFontSize,
+  chartNumericTick,
+  chartSeries,
+  chartTick,
+  chartTooltipProps,
 } from "@/lib/chart-theme";
 import { formatKpiValue } from "@/lib/kpi-format";
+import { AnalyticalTable } from "@/components/AnalyticalTable";
 import { KpiStrip, KpiStripDefinitions } from "@/components/KpiStrip";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import FilterBar from "@/components/FilterBar";
@@ -109,22 +116,6 @@ function cellText(kpi: KpiResult | null): string {
   return formatKpiValue(kpi.id, kpi.value);
 }
 
-function ScrollTable({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="overflow-x-auto rounded-lg border">
-      <table aria-label={label} className="w-full text-sm">
-        {children}
-      </table>
-    </div>
-  );
-}
-
 function GroupTable({
   dimension,
   groups,
@@ -134,58 +125,34 @@ function GroupTable({
 }) {
   return (
     <div className="mt-2">
-      <ScrollTable label={`Commercial value by ${dimension}`}>
+      <AnalyticalTable label={`Commercial value by ${dimension}`}>
         <thead>
-          <tr className="border-b text-left">
-            <th scope="col" className="px-3 py-2 font-medium">
-              {dimension}
-            </th>
-            <th scope="col" className="px-3 py-2 font-medium">
-              Net value
-            </th>
-            <th scope="col" className="px-3 py-2 font-medium">
-              Recorded profit
-            </th>
-            <th scope="col" className="px-3 py-2 font-medium">
-              Profit margin
-            </th>
-            <th scope="col" className="px-3 py-2 font-medium">
-              Discounts
-            </th>
-            <th scope="col" className="px-3 py-2 font-medium">
-              Discount rate
-            </th>
-            <th scope="col" className="px-3 py-2 font-medium">
-              Loss-making-order rate
-            </th>
+          <tr>
+            <th scope="col">{dimension}</th>
+            <th scope="col">Net value</th>
+            <th scope="col">Recorded profit</th>
+            <th scope="col">Profit margin</th>
+            <th scope="col">Discounts</th>
+            <th scope="col">Discount rate</th>
+            <th scope="col">Loss-making-order rate</th>
           </tr>
         </thead>
         <tbody>
           {groups.map((group) => (
-            <tr key={group.key} className="border-b last:border-0">
-              <td className="px-3 py-2">{group.key}</td>
-              <td className="px-3 py-2">
-                {cellText(findKpi(group.kpis, "kpi.value.net"))}
-              </td>
-              <td className="px-3 py-2">
-                {cellText(findKpi(group.kpis, "kpi.profit.recorded"))}
-              </td>
-              <td className="px-3 py-2">
-                {cellText(findKpi(group.kpis, "kpi.margin.profit"))}
-              </td>
-              <td className="px-3 py-2">
-                {cellText(findKpi(group.kpis, "kpi.value.discount"))}
-              </td>
-              <td className="px-3 py-2">
-                {cellText(findKpi(group.kpis, "kpi.rate.discount"))}
-              </td>
-              <td className="px-3 py-2">
+            <tr key={group.key}>
+              <td>{group.key}</td>
+              <td>{cellText(findKpi(group.kpis, "kpi.value.net"))}</td>
+              <td>{cellText(findKpi(group.kpis, "kpi.profit.recorded"))}</td>
+              <td>{cellText(findKpi(group.kpis, "kpi.margin.profit"))}</td>
+              <td>{cellText(findKpi(group.kpis, "kpi.value.discount"))}</td>
+              <td>{cellText(findKpi(group.kpis, "kpi.rate.discount"))}</td>
+              <td>
                 {cellText(findKpi(group.kpis, "kpi.orders.loss_making_rate"))}
               </td>
             </tr>
           ))}
         </tbody>
-      </ScrollTable>
+      </AnalyticalTable>
     </div>
   );
 }
@@ -222,15 +189,26 @@ function NetValueChart({
       <div role="img" aria-label={`Recorded net order value by ${dimension}`}>
         <ResponsiveContainer width="100%" height={240}>
           <BarChart data={rows} margin={{ ...chartMargins, left: 48 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="group" tick={{ fontSize: chartTickFontSize }} />
-            <YAxis tick={{ fontSize: chartTickFontSize }} width={56} />
-            <Tooltip />
-            <Legend />
+            <CartesianGrid {...chartGridProps} />
+            <XAxis
+              dataKey="group"
+              tick={chartTick}
+              tickLine={false}
+              axisLine={chartAxisLine}
+            />
+            <YAxis
+              tick={chartNumericTick}
+              tickLine={false}
+              axisLine={chartAxisLine}
+              width={56}
+            />
+            <Tooltip {...chartTooltipProps} cursor={chartBarCursor} />
+            <Legend {...chartLegendProps} />
             <Bar
               dataKey="net"
               name="Recorded net order value"
-              fill={chartPalette[0]}
+              fill={chartSeries.primary}
+              isAnimationActive={chartIsAnimationActive}
             />
           </BarChart>
         </ResponsiveContainer>

@@ -480,6 +480,32 @@ describe("Phase-14 Commercial analytics", () => {
     expect(screen.getByText(/never averages/i)).toBeInTheDocument();
   });
 
+  it("preserves chart series and table headers through the redesign", async () => {
+    renderSeeded(snapshotFor(SESSION_A, "READY"));
+    goToCommercial();
+    await screen.findAllByText("Recorded net order value");
+    expect(
+      screen.getByRole("img", {
+        name: /recorded net order value by product category/i,
+      }),
+    ).toBeInTheDocument();
+    const table = screen.getByRole("table", {
+      name: /commercial value by product category/i,
+    });
+    for (const header of [
+      "Net value",
+      "Recorded profit",
+      "Profit margin",
+      "Discounts",
+      "Discount rate",
+      "Loss-making-order rate",
+    ]) {
+      expect(
+        within(table).getByRole("columnheader", { name: header }),
+      ).toBeInTheDocument();
+    }
+  });
+
   it("renders an unavailable group margin as unavailable, never zero", async () => {
     renderSeeded(snapshotFor(SESSION_A, "READY"));
     goToCommercial();

@@ -540,6 +540,28 @@ describe("Phase-13 Delivery analytics", () => {
     ).toBeInTheDocument();
   });
 
+  it("preserves group-table headers through the shared table shell", async () => {
+    renderSeeded(snapshotFor(SESSION_A, "READY"));
+    goToDelivery();
+    const table = await screen.findByRole("table", {
+      name: /late-shipment rate by shipping mode/i,
+    });
+    for (const header of [
+      "Late-shipment rate",
+      "Late (count)",
+      "Early (count)",
+      "Exactly on schedule (count)",
+      "Eligible (count)",
+      "Avg actual (days)",
+      "Avg scheduled (days)",
+      "Variance (days)",
+    ]) {
+      expect(
+        within(table).getByRole("columnheader", { name: header }),
+      ).toBeInTheDocument();
+    }
+  });
+
   it("reconciles per-group eligible counts to the headline total", async () => {
     renderSeeded(snapshotFor(SESSION_A, "READY"));
     goToDelivery();
