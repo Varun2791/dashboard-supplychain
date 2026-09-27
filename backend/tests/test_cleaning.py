@@ -317,9 +317,11 @@ def test_trim_fixture_values_and_counts(client: TestClient, session_root: str) -
     assert cat_steps["shipping_mode"]["fixed"] == 1
     assert sum(s["fixed"] for s in grouped["DQ-CAT-005"]) == 4
     # Unknown enums remain flagged, never coerced into known categories.
-    assert grouped["DQ-CAT-002"][0]["flagged"] == 2
+    # (Reference-confirmed "Second Class"/"Corporate" are now governed known
+    # values, so only the genuinely unknown "Rocket"/"consumer" flag here.)
+    assert grouped["DQ-CAT-002"][0]["flagged"] == 1
     assert grouped["DQ-CAT-002"][0]["fixed"] == 0
-    assert grouped["DQ-CAT-003"][0]["flagged"] == 2
+    assert grouped["DQ-CAT-003"][0]["flagged"] == 1
     assert grouped["DQ-CAT-003"][0]["fixed"] == 0
     # Privacy exclusion recorded without values.
     assert grouped["DQ-PRIVACY-001"][0]["excluded"] == 1

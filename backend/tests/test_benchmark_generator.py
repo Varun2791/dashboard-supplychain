@@ -223,8 +223,8 @@ def test_quality_stress_profile_is_deterministic_and_shaped() -> None:
         if row["Order Status"] == "BOGUS_STATUS"
         or row["shipping date (DateOrders)"] == ""
         or row["Product Name"] != row["Product Name"].strip()
-        or row["Shipping Mode"] == "Second Class"
-        or row["Customer Segment"] == "Corporate"
+        or row["Shipping Mode"] == "SYN-Unknown-Mode"
+        or row["Customer Segment"] == "SYN-Unknown-Segment"
     )
     assert mutated > 0
     valid = generate_dataset(tier="small", seed=5, rows=400)

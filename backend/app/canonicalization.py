@@ -140,7 +140,8 @@ UNKNOWN_FLAGGED = "UNKNOWN_FLAGGED"
 
 # Exact enum maps (canonical-schema section 7; enforcement matches profiling:
 # order_status is the closed 8-set; shipping_mode/customer_segment enforce
-# only the verbatim source spellings, everything else takes UNKNOWN_FLAGGED).
+# the reference-confirmed source spellings (ADR-038 clarification),
+# everything else takes UNKNOWN_FLAGGED).
 ORDER_STATUS_MAP: dict[str, str] = {
     "COMPLETE": "COMPLETE",
     "CLOSED": "CLOSED",
@@ -153,10 +154,13 @@ ORDER_STATUS_MAP: dict[str, str] = {
 }
 SHIPPING_MODE_MAP: dict[str, str] = {
     "Standard Class": "STANDARD_CLASS",
+    "Second Class": "SECOND_CLASS",
+    "First Class": "FIRST_CLASS",
     "Same Day": "SAME_DAY",
 }
 CUSTOMER_SEGMENT_MAP: dict[str, str] = {
     "Consumer": "CONSUMER",
+    "Corporate": "CORPORATE",
     "Home Office": "HOME_OFFICE",
 }
 

@@ -286,7 +286,13 @@ describe("Phase-15B shared analytics filters", () => {
     const shipping = Array.from(
       (screen.getByLabelText("Shipping mode") as HTMLSelectElement).options,
     ).map((option) => option.value);
-    expect(shipping).toEqual(["", "STANDARD_CLASS", "SAME_DAY"]);
+    expect(shipping).toEqual([
+      "",
+      "STANDARD_CLASS",
+      "SECOND_CLASS",
+      "FIRST_CLASS",
+      "SAME_DAY",
+    ]);
     const status = Array.from(
       (screen.getByLabelText("Order status") as HTMLSelectElement).options,
     ).map((option) => option.value);
@@ -313,8 +319,6 @@ describe("Phase-15B shared analytics filters", () => {
     ]);
     for (const select of [shipping, status, outcome]) {
       expect(select).not.toContain("UNKNOWN_FLAGGED");
-      expect(select).not.toContain("SECOND_CLASS");
-      expect(select).not.toContain("FIRST_CLASS");
     }
     expect(document.body.textContent ?? "").not.toContain("UNKNOWN_FLAGGED");
   });

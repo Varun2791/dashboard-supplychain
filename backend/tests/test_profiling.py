@@ -410,26 +410,23 @@ def test_latin1_encoding_profiles(client: TestClient, session_root: str) -> None
 def test_inversion_derived_spellings_take_unknown_path(
     client: TestClient, session_root: str
 ) -> None:
-    """Governance gap: these spellings have no verbatim contract instance.
-
-    Until reference-file confirmation records the exact strings, they take
-    the governed UNKNOWN path (ADR-030): counted, reported, excluded from
-    split views — never coerced, never blocking. The session still advances.
-    """
+    """Genuinely unmapped spellings take the governed UNKNOWN path (ADR-030):
+    counted, reported, excluded from split views — never coerced, never
+    blocking. The session still advances."""
     header = REQUIRED_HEADER + ",Customer Segment"
     rows = [
-        valid_row(**{"Shipping Mode": "Second Class"}) + ",Consumer",
+        valid_row(**{"Shipping Mode": "Rocket"}) + ",Consumer",
         valid_row(
             **{
                 "Order Id": "SYN-ORDER-9302",
                 "Order Item Id": "SYN-ITEM-9302",
-                "Shipping Mode": "First Class",
+                "Shipping Mode": "Warp",
             }
         )
         + ",Consumer",
-        # Distinct customer: Corporate here is a per-line unknown enum only.
+        # Distinct customer: Platinum here is a per-line unknown enum only.
         # Invariance conflicts are per-customer (DQ-GRAIN-004), so a lone
-        # Corporate row on its own customer cannot conflict with Consumer
+        # Platinum row on its own customer cannot conflict with Consumer
         # rows on other customers.
         valid_row(
             **{
@@ -438,7 +435,7 @@ def test_inversion_derived_spellings_take_unknown_path(
                 "Customer Id": "SYN-CUST-933",
             }
         )
-        + ",Corporate",
+        + ",Platinum",
     ]
     session_id = upload_ok(client, (header + "\n" + "\n".join(rows) + "\n").encode())
     assert (
@@ -704,13 +701,13 @@ def test_grain004_missing_vs_value_is_not_a_conflict(
 def test_grain004_unknown_segment_still_flags_without_repair(
     client: TestClient, session_root: str
 ) -> None:
-    """Corporate is unknown-domain (CAT-003, never coerced) AND a second
+    """Platinum is unknown-domain (CAT-003, never coerced) AND a second
     distinct segment value (GRAIN-004): independent findings, no repair."""
     rows = [
         dim_row({"Order Id": "SYN-ORDER-9591", "Order Item Id": "SYN-ITEM-9591"}),
         dim_row(
             {"Order Id": "SYN-ORDER-9592", "Order Item Id": "SYN-ITEM-9592"},
-            **{"Customer Segment": "Corporate"},
+            **{"Customer Segment": "Platinum"},
         ),
     ]
     session_id = upload_ok(client, dim_csv(rows))

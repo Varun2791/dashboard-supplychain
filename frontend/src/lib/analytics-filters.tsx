@@ -44,12 +44,14 @@ export const DEFAULT_FILTERS: AnalyticsFilters = {
   shipment_outcome: null,
 };
 
-/** Governed V1 shipping-mode options (ADR-038): the mapped subset only. */
+/** Governed V1 shipping-mode options (canonical-schema §7; ADR-038 clarification). */
 export const SHIPPING_MODE_OPTIONS: ReadonlyArray<{
   value: string;
   label: string;
 }> = [
   { value: "STANDARD_CLASS", label: "Standard Class" },
+  { value: "SECOND_CLASS", label: "Second Class" },
+  { value: "FIRST_CLASS", label: "First Class" },
   { value: "SAME_DAY", label: "Same Day" },
 ];
 

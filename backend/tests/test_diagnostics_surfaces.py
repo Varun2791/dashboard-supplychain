@@ -605,7 +605,7 @@ def test_orders_multi_merch_category_exclusion(client: TestClient) -> None:
 
 
 def test_orders_shipping_mode_subset(client: TestClient) -> None:
-    """Only the mapped V1 subset is selectable; the rest is rejected."""
+    """All four governed modes are selectable; unmapped tokens rejected."""
     session_id = ready_session(client)
     standard = orders_page(client, session_id, shipping_mode="STANDARD_CLASS")
     assert [row["order_id"] for row in standard["data"]["rows"]] == [
@@ -619,9 +619,13 @@ def test_orders_shipping_mode_subset(client: TestClient) -> None:
         "O-ORD-F",
         "O-ORD-B",
     ]
+    # Reference-confirmed modes accepted (no fixture order uses them here).
+    second = orders_page(client, session_id, shipping_mode="SECOND_CLASS")
+    assert second["data"]["rows"] == []
+    assert second["data"]["page"]["total"] == 0
     rejected = client.get(
         f"/api/v1/sessions/{session_id}/orders",
-        params={"shipping_mode": "SECOND_CLASS"},
+        params={"shipping_mode": "BOGUS_MODE"},
     )
     assert rejected.status_code == 422
     assert rejected.json()["error"]["code"] == "INVALID_FILTER_VALUE"

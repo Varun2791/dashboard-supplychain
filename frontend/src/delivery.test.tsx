@@ -528,11 +528,11 @@ describe("Phase-13 Delivery analytics", () => {
     renderSeeded(snapshotFor(SESSION_A, "READY"));
     goToDelivery();
     await screen.findByText("Standard Class");
-    expect(screen.getByText("Second Class")).toBeInTheDocument();
     // Backend group keys verbatim; backend denominators, not arithmetic.
     const table = screen.getByRole("table", {
       name: /late-shipment rate by shipping mode/i,
     });
+    expect(within(table).getByText("Second Class")).toBeInTheDocument();
     expect(table).toHaveTextContent("50.0%");
     expect(table).toHaveTextContent("Standard Class");
     expect(

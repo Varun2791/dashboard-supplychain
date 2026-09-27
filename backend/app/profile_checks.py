@@ -26,12 +26,11 @@ Implementation interpretations (bounded by governance, documented here):
   only after trimming is reported under DQ-CAT-005 (fixable by cleaning),
   not as an unknown enum, so root causes are not double-counted.
 - ``order_status`` matches the eight canonical spellings exactly (source
-  examples in governance are already upper-snake). Shipping mode and
-  customer segment enforce only the source spellings with a verbatim
-  instance in canonical-schema section 7 ("Standard Class", "Same Day",
-  "Consumer", "Home Office"); inversion-derived spellings without a
-  verbatim instance are not enforced (see the governance-consistency note
-  at the enum sets). The delivery-status domain beyond the exact
+  examples in governance are already upper-snake). Shipping mode enforces the
+  reference-confirmed source spellings "Standard Class", "Second Class",
+  "First Class", "Same Day"; customer segment enforces "Consumer",
+  "Corporate", "Home Office" (ADR-038 clarification). The delivery-status
+  domain beyond the exact
   cancel signal ``Shipping canceled`` is not governed, so DQ-CAT-004 is
   deferred (see ``RULES_DEFERRED``); cancel recognition is still used
   internally for rule populations.
@@ -152,25 +151,18 @@ ORDER_STATUS_VALUES: Final = frozenset(
     }
 )
 
-# Source spellings evidenced in canonical-schema section 7 ("Source examples
-# mapped exactly"). Governance-consistency note (pre-commit audit): the
-# canonical sets are closed and explicit, but the source column uses "e.g."
-# exemplars, so only spellings with a verbatim instance in accepted text
-# are enforced:
-# - order_status: canonical cell lists all 8 values with no "e.g.", source
-#   examples are identity-spelled, full table verified at implementation —
-#   enforced as the closed 8-set;
-# - shipping_mode: only "Standard Class" and "Same Day" are verbatim;
-# - customer_segment: only "Consumer" and "Home Office" are verbatim.
-# "Second Class", "First Class", and "Corporate" follow the demonstrated
-# Title-Case inversion but have no verbatim instance, so they are NOT
-# enforced as known (inversion is not authority). Such values take the
-# governed UNKNOWN path (ADR-030: counted, reported, excluded from split
-# views, never coerced, never blocking) until reference-file confirmation
-# records the exact strings in governance.
-SHIPPING_MODE_VALUES: Final = frozenset({"Standard Class", "Same Day"})
+# Source spellings evidenced in canonical-schema section 7 and confirmed by
+# real DataCo reference verification (ADR-038 clarification, 2026-09-27):
+# - order_status: the closed 8-set (identity-spelled);
+# - shipping_mode: "Standard Class", "Second Class", "First Class", "Same Day";
+# - customer_segment: "Consumer", "Corporate", "Home Office".
+# Anything else takes the governed UNKNOWN path (ADR-030: counted, reported,
+# excluded from split views, never coerced, never blocking).
+SHIPPING_MODE_VALUES: Final = frozenset(
+    {"Standard Class", "Second Class", "First Class", "Same Day"}
+)
 
-CUSTOMER_SEGMENT_VALUES: Final = frozenset({"Consumer", "Home Office"})
+CUSTOMER_SEGMENT_VALUES: Final = frozenset({"Consumer", "Corporate", "Home Office"})
 
 SAME_DAY_SOURCE_VALUE: Final = "Same Day"
 

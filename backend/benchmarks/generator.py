@@ -312,8 +312,8 @@ def generate_dataset(
                 elif roll < 0.06:
                     row_net = net + 100
                 if rng.random() < 0.02:
-                    row_mode = "Second Class"
-                    row_segment = "Corporate"
+                    row_mode = "SYN-Unknown-Mode"
+                    row_segment = "SYN-Unknown-Segment"
 
             cells = [
                 f"SYN-ORDER-{order_seq:06d}",
