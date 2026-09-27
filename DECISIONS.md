@@ -1141,6 +1141,26 @@ Smallest additive contract, changing no prior decision:
 - Phase-15 tests and mocks must not expose fields, filter values, or
   capabilities the real producer does not emit or accept.
 
+### Clarification (2026-09-27) — reference-confirmed source spellings
+
+Real DataCo reference verification (external file, 180,519 rows, SHA-256
+`fa6d022ed437155e1a2f0378710602848703c8a7f203f7ff5d77805bf8480aa6`)
+confirms the exact source spellings `Standard Class` (107,752 rows),
+`Second Class` (35,216), `First Class` (27,814), `Same Day` (9,737), mapping
+explicitly to the already-governed canonical values `STANDARD_CLASS`,
+`SECOND_CLASS`, `FIRST_CLASS`, `SAME_DAY`. The conditional restriction above
+to `STANDARD_CLASS`/`SAME_DAY`-only V1 shipping-mode options is therefore
+satisfied and retired: V1 filter options may expose all four governed modes
+once the implementation maps them. Likewise confirmed: `Corporate` (54,789
+rows) maps to the already-governed canonical `CORPORATE`;
+`customer_segment` remains grouping/ranking-only (not a Phase-15 shared
+filter) unless separately governed. This clarification authorizes the
+mappings and option exposure; it does not claim they are implemented yet.
+`UNKNOWN_FLAGGED` remains available for genuinely unmapped values;
+`PENDING_PAYMENT` has no governed Order Status target and remains
+`UNKNOWN_FLAGGED`, with cancellation/fraud semantics unchanged. No new
+canonical enum is introduced; no phase status changes.
+
 ---
 
 ## ADR-039 — Phase-15 diagnostic ranking semantics
