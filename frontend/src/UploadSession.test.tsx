@@ -843,6 +843,79 @@ describe("UploadSession", () => {
     expect(screen.queryByTestId("error-panel")).not.toBeInTheDocument();
   });
 
+  it("shows the conceptual pipeline beside the literal backend state", async () => {
+    stubPhase6Fetch();
+    render(<UploadSession />);
+    fireEvent.change(screen.getByTestId("file-input"), {
+      target: { files: [csvFile()] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^upload$/i }));
+    await screen.findByTestId("success-panel");
+    const pipeline = screen.getByRole("list", {
+      name: "Session pipeline",
+    });
+    for (const step of [
+      "Upload",
+      "Profile",
+      "Validate",
+      "Clean",
+      "Analyze",
+      "Dashboard",
+    ]) {
+      expect(pipeline).toHaveTextContent(step);
+    }
+    // No percentages, no progress claims: the literal state stays visible.
+    expect(screen.getByTestId("success-panel").textContent).not.toMatch(/%/);
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+
+  it("titles an expired session distinctly from a failed upload", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                state: "FAILED",
+                stage: "PROFILING",
+                progress: {
+                  completedStages: [],
+                  currentStage: "PROFILING",
+                  remainingStages: [],
+                  note: "",
+                },
+                startedAt: "2026-09-24T00:00:00",
+                updatedAt: "2026-09-24T00:00:01",
+                error: {
+                  code: "SESSION_EXPIRED",
+                  stage: "PROFILING",
+                  message: "The session expired after 24 hours of inactivity.",
+                  details: {},
+                },
+              },
+              meta: {},
+              error: null,
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          ),
+        ),
+      ),
+    );
+    render(<UploadSession />);
+    fireEvent.change(screen.getByTestId("file-input"), {
+      target: { files: [csvFile()] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^upload$/i }));
+    const panel = await screen.findByTestId("error-panel");
+    expect(panel).toHaveTextContent(/this session expired/i);
+    expect(panel).toHaveTextContent(/SESSION_EXPIRED/);
+    expect(panel).not.toHaveTextContent(/could not be accepted/i);
+  });
+
   it("renders hostile header text inertly, never as HTML", async () => {
     const hostile = "<script>alert(1)</script>";
     vi.stubGlobal(

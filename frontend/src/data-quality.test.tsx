@@ -480,6 +480,60 @@ describe("Phase-11 Data Quality view", () => {
     expect(document.body.textContent).not.toMatch(/@|\.com|John|Smith/);
   });
 
+  it("reports the severity distribution without scores", async () => {
+    renderSeeded(snapshotFor(SESSION_A, "READY"));
+    goToDataQuality();
+    const strip = await screen.findByRole("heading", {
+      name: "Severity distribution",
+    });
+    const section = strip.closest("section");
+    expect(section?.textContent).toMatch(/ERROR/);
+    expect(section?.textContent).toMatch(/WARNING/);
+    expect(section?.textContent).toMatch(/INFO/);
+    expect(section?.textContent).toMatch(/3 of 20 rules triggered/);
+    expect(section?.textContent).toMatch(/gate nothing/);
+    expect(document.body.textContent).not.toMatch(
+      /quality score|health score|readiness|pass percentage|confidence/i,
+    );
+  });
+
+  it("reports a cleaning step that does not reconcile instead of hiding it", async () => {
+    route = (url: string) => {
+      if (url.endsWith("/cleaning-report")) {
+        return ok({
+          data: {
+            steps: [
+              {
+                ruleId: "DQ-CAT-005",
+                field: "destination_country",
+                detected: 5,
+                fixed: 3,
+                flagged: 0,
+                excluded: 0,
+                unchanged: 0,
+                reason: "Trimmed leading/trailing whitespace.",
+              },
+            ],
+          },
+          meta: {},
+          error: null,
+        });
+      }
+      return defaultRoute(url);
+    };
+    renderSeeded(snapshotFor(SESSION_A, "READY"));
+    goToDataQuality();
+    await screen.findByText("DQ-CAT-005");
+    expect(screen.getByText(/does not reconcile/i)).toBeInTheDocument();
+  });
+
+  it("states that READY never means perfect data", async () => {
+    renderSeeded(snapshotFor(SESSION_A, "READY"));
+    goToDataQuality();
+    await screen.findByText(/7 order-item lines/);
+    expect(screen.getByText(/never perfect data/i)).toBeInTheDocument();
+  });
+
   it("reports no axe violations on the loaded report", async () => {
     const { container } = renderSeeded(snapshotFor(SESSION_A, "READY"));
     goToDataQuality();

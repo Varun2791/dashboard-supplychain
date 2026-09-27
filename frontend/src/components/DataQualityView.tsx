@@ -336,6 +336,82 @@ function SourceProfile({ profile }: { profile: ProfileData }) {
 
 const SEVERITIES = ["ERROR", "WARNING", "INFO"] as const;
 
+function severityTone(severity: string): string {
+  if (severity === "ERROR") {
+    return "error";
+  }
+  if (severity === "WARNING") {
+    return "pending";
+  }
+  return "info";
+}
+
+/**
+ * Compact severity distribution strip (governance slice 4, DESIGN.md §12).
+ * Counts only, directly from the backend summary: markers pair governed
+ * hues with always-visible text labels, never color alone. No scores, no
+ * grades, no readiness percentages — errors gate their named stage,
+ * warnings and informational notes gate nothing.
+ */
+function SeverityStrip({ quality }: { quality: DataQualityData }) {
+  const { summary } = quality;
+  return (
+    <section aria-labelledby="dq-severity-heading">
+      <h3 id="dq-severity-heading" className="text-base font-semibold">
+        Severity distribution
+      </h3>
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border bg-card px-3 py-2 text-sm">
+        <span className="flex items-center gap-1.5">
+          <span
+            aria-hidden="true"
+            className="session-dot"
+            data-tone={severityTone("ERROR")}
+          />
+          <span>
+            ERROR{" "}
+            <span className="font-analytical tabular-nums">
+              {summary.errors}
+            </span>
+          </span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span
+            aria-hidden="true"
+            className="session-dot"
+            data-tone={severityTone("WARNING")}
+          />
+          <span>
+            WARNING{" "}
+            <span className="font-analytical tabular-nums">
+              {summary.warnings}
+            </span>
+          </span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span
+            aria-hidden="true"
+            className="session-dot"
+            data-tone={severityTone("INFO")}
+          />
+          <span>
+            INFO{" "}
+            <span className="font-analytical tabular-nums">
+              {summary.infos}
+            </span>
+          </span>
+        </span>
+        <span className="text-muted-foreground">
+          {summary.rulesTriggered} of {summary.rulesEvaluated} rules triggered.
+        </span>
+      </div>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Errors gate their named stage; warnings and informational notes gate
+        nothing.
+      </p>
+    </section>
+  );
+}
+
 function IssuesBySeverity({ quality }: { quality: DataQualityData }) {
   const { summary } = quality;
   return (
@@ -393,6 +469,11 @@ function IssuesBySeverity({ quality }: { quality: DataQualityData }) {
                     {issues.map((issue) => (
                       <tr key={issue.ruleId} className="border-b last:border-0">
                         <td className="px-3 py-2 font-mono text-[13px]">
+                          <span
+                            aria-hidden="true"
+                            className="session-dot mr-1.5 align-middle"
+                            data-tone={severityTone(issue.severity)}
+                          />
                           {issue.ruleId}
                         </td>
                         <td className="px-3 py-2">{issue.count}</td>
@@ -502,7 +583,25 @@ function CleaningAudit({ cleaning }: { cleaning: CleaningReportData }) {
                   <td className="px-3 py-2">{step.flagged}</td>
                   <td className="px-3 py-2">{step.excluded}</td>
                   <td className="px-3 py-2">{step.unchanged}</td>
-                  <td className="px-3 py-2">{step.reason}</td>
+                  <td className="px-3 py-2">
+                    {step.reason}
+                    {step.detected !==
+                    step.fixed +
+                      step.flagged +
+                      step.excluded +
+                      step.unchanged ? (
+                      <span className="text-muted-foreground">
+                        {" "}
+                        (does not reconcile: detected {step.detected} vs fixed +
+                        flagged + excluded + unchanged{" "}
+                        {step.fixed +
+                          step.flagged +
+                          step.excluded +
+                          step.unchanged}
+                        ; reported as supplied)
+                      </span>
+                    ) : null}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -710,7 +809,14 @@ export default function DataQualityView() {
         <p className="mt-1 text-sm text-muted-foreground" role="status">
           Session {session.sessionId.slice(0, 8)} · {sessionState ?? "starting"}
         </p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Governance evidence for the uploaded file: what was detected, what
+          changed, and what remains flagged. Warnings, excluded fields, and
+          retained values may remain even when analysis is complete; READY
+          describes availability, never perfect data.
+        </p>
       </div>
+      <SeverityStrip quality={reports.quality} />
       <SourceProfile profile={reports.profile} />
       <SchemaCoverage schema={reports.schema} />
       <IssuesBySeverity quality={reports.quality} />

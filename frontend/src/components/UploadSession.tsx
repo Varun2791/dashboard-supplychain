@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import SessionLifecycle from "@/components/SessionLifecycle";
 import {
   ApiRequestError,
   deleteSession,
@@ -372,19 +373,24 @@ export default function UploadSession({
   return (
     <section
       aria-labelledby="upload-heading"
-      className="flex w-full flex-col gap-4 rounded-xl border p-6"
+      className="flex w-full flex-col gap-4 rounded-lg border bg-card p-6"
     >
-      <h2 id="upload-heading" className="text-xl font-semibold tracking-tight">
-        Upload a supply-chain CSV
-      </h2>
-      <p className="text-muted-foreground text-sm">
-        Files are processed only on this machine. Nothing is sent to any
-        external service.
-      </p>
-      <p className="text-muted-foreground text-sm">
-        Choose a DataCo-compatible .csv file. Maximum {MAX_UPLOAD_MB} MB. The
-        reference file is about 95.9 MB with 180,519 rows.
-      </p>
+      <div>
+        <h2
+          id="upload-heading"
+          className="text-xl font-semibold tracking-tight"
+        >
+          Upload a supply-chain CSV
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Files are processed only on this machine. Nothing is sent to any
+          external service.
+        </p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Choose a DataCo-compatible .csv file. Maximum {MAX_UPLOAD_MB} MB. The
+          reference file is about 95.9 MB with 180,519 rows.
+        </p>
+      </div>
 
       {session === null ? (
         <>
@@ -403,13 +409,16 @@ export default function UploadSession({
             }}
             className={
               dragActive
-                ? "rounded-lg border-2 border-dashed border-primary p-6 text-center"
-                : "rounded-lg border-2 border-dashed p-6 text-center"
+                ? "rounded-lg border-2 border-dashed border-primary bg-primary/5 p-6 text-center"
+                : "rounded-lg border-2 border-dashed border-border p-6 text-center"
             }
           >
             <p className="text-sm">Drag and drop a .csv file here, or</p>
             <div className="mt-2 flex flex-col items-start gap-2">
-              <label htmlFor="csv-file-input" className="text-sm font-medium">
+              <label
+                htmlFor="csv-file-input"
+                className="font-analytical text-[11px] font-semibold tracking-wide text-muted-foreground uppercase"
+              >
                 Choose a CSV file
               </label>
               <input
@@ -418,6 +427,7 @@ export default function UploadSession({
                 data-testid="file-input"
                 type="file"
                 accept=".csv,text/csv"
+                className="max-w-full text-sm"
                 onChange={(event) => {
                   const files = event.target.files;
                   chooseFile(
@@ -440,8 +450,11 @@ export default function UploadSession({
               className="flex flex-wrap items-center gap-2 text-sm"
             >
               <span>
-                Selected: <strong>{selected.name}</strong> (
-                {formatBytes(selected.size)})
+                Selected:{" "}
+                <strong className="font-analytical font-semibold">
+                  {selected.name}
+                </strong>{" "}
+                ({formatBytes(selected.size)})
               </span>
               <Button
                 type="button"
@@ -489,46 +502,63 @@ export default function UploadSession({
           <p role="status" className="text-sm">
             Your file passed the safety checks and is stored for this session.
           </p>
+          <h3 className="font-analytical text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+            Session file
+          </h3>
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
             <dt className="font-medium">File</dt>
-            <dd>{session.filenameSafe}</dd>
+            <dd className="font-analytical break-all">
+              {session.filenameSafe}
+            </dd>
             <dt className="font-medium">Size</dt>
-            <dd>
+            <dd className="font-analytical tabular-nums">
               {session.bytes} bytes ({formatBytes(session.bytes)})
             </dd>
             <dt className="font-medium">SHA-256</dt>
             <dd>
-              <code title={session.sha256} className="break-all">
+              <code
+                title={session.sha256}
+                className="font-analytical break-all"
+              >
                 {session.sha256.slice(0, 16)}…
               </code>
             </dd>
             <dt className="font-medium">Encoding</dt>
-            <dd>{session.encoding}</dd>
+            <dd className="font-analytical">{session.encoding}</dd>
             <dt className="font-medium">Session state</dt>
-            <dd>
+            <dd className="font-analytical">
               {sessionState ?? "VALIDATING"}
               {pollCount > 0 ? ` (checked ${pollCount}x)` : ""}
             </dd>
           </dl>
+          <SessionLifecycle state={sessionState} />
           {pollSettled ? (
-            <p
-              data-testid="status-note"
-              className="text-muted-foreground text-sm"
-            >
-              Profiling and audited cleaning are complete. Only the governed
-              whitespace trim ran; anything else stayed as uploaded.
-              {sessionState === "READY"
-                ? " KPI analysis is complete; headline results are ready for the dashboard views."
-                : sessionState === "ANALYZING"
-                  ? " Canonical tables are built; KPI analytics are not available in this build yet."
-                  : " Canonicalization is gated (see below); KPI analytics are not available in this build yet."}
-            </p>
+            <>
+              <h3 className="font-analytical text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                Session status
+              </h3>
+              <p
+                data-testid="status-note"
+                className="text-muted-foreground text-sm"
+              >
+                Profiling and audited cleaning are complete. Only the governed
+                whitespace trim ran; anything else stayed as uploaded.
+                {sessionState === "READY"
+                  ? " KPI analysis is complete; headline results are ready for the dashboard views. Warnings, excluded fields, and retained values may still be listed below; READY describes availability, never perfect data."
+                  : sessionState === "ANALYZING"
+                    ? " Canonical tables are built; KPI analytics are not available in this build yet."
+                    : " Canonicalization is gated (see below); KPI analytics are not available in this build yet."}
+              </p>
+            </>
           ) : null}
           {schema !== null ? (
             <div
               data-testid="schema-panel"
               className="flex flex-col gap-1 text-sm"
             >
+              <h3 className="font-analytical text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                Schema compatibility
+              </h3>
               <p role="status">
                 Schema check passed: this file matches the V1 DataCo reference
                 mapping.
@@ -548,6 +578,9 @@ export default function UploadSession({
               data-testid="quality-panel"
               className="flex flex-col gap-1 text-sm"
             >
+              <h3 className="font-analytical text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                Profiling summary
+              </h3>
               <p role="status">
                 Value-level profiling is complete. No values were repaired,
                 removed, or reordered.
@@ -588,6 +621,9 @@ export default function UploadSession({
               data-testid="cleaning-panel"
               className="flex flex-col gap-1 text-sm"
             >
+              <h3 className="font-analytical text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                Cleaning review
+              </h3>
               <p role="status">
                 Cleaning review: {cleaningTotals.detected} detected across{" "}
                 {cleaningTotals.rules} rule
@@ -664,7 +700,11 @@ export default function UploadSession({
           role="alert"
           className="flex flex-col gap-1 rounded-lg border border-destructive/40 p-4 text-sm"
         >
-          <p className="font-medium">The file could not be accepted.</p>
+          <p className="font-medium">
+            {failure.code === "SESSION_EXPIRED"
+              ? "This session expired."
+              : "The file could not be accepted."}
+          </p>
           <p>{failure.message}</p>
           {failure.guidance !== null ? <p>{failure.guidance}</p> : null}
           {failure.missing !== null && failure.missing.length > 0 ? (
