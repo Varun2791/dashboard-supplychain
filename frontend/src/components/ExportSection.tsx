@@ -256,7 +256,7 @@ export default function ExportSection() {
   return (
     <section aria-labelledby="dq-export-heading">
       <h3 id="dq-export-heading" className="text-base font-semibold">
-        Exports
+        Export governed outputs
       </h3>
       <p className="mt-1 text-sm text-muted-foreground">
         Data exports respect the active dashboard filters. Audit reports cover
@@ -283,10 +283,15 @@ export default function ExportSection() {
           return (
             <div
               key={kind}
-              className="flex flex-col gap-2 rounded-lg border p-4"
+              className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3"
             >
               <div>
-                <p className="text-sm font-medium">{meta.title}</p>
+                <p className="text-sm font-medium">
+                  {meta.title}{" "}
+                  <span className="font-analytical text-[11px] font-normal text-muted-foreground">
+                    {isCsv ? "CSV" : "Report"}
+                  </span>
+                </p>
                 <p className="mt-0.5 text-sm text-muted-foreground">
                   {meta.body}
                 </p>

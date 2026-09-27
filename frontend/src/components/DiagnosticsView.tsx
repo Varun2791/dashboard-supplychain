@@ -16,6 +16,7 @@ import type {
 import { useAnalyticsFilters } from "@/lib/analytics-filters";
 import { findKpi, metricDenominator, rankGroups } from "@/lib/diagnostics-rank";
 import { formatKpiValue } from "@/lib/kpi-format";
+import { AnalyticalTable } from "@/components/AnalyticalTable";
 import { useSession } from "@/lib/session";
 import { VIEWS } from "@/lib/view-registry";
 import FilterBar from "@/components/FilterBar";
@@ -86,7 +87,9 @@ function rateText(group: KpiGroup, metricId: string): string {
  * grouped backend responses and are only presentation-sorted here:
  * available metric values first (descending), deterministic group-key
  * ascending tie-break, unavailable after available (never ranked as zero).
- * Every ranked rate shows its backend denominator beside it.
+ * Every ranked rate shows its backend denominator beside it. Rank numbers
+ * reflect display order only: rank 1 means highest on the shown metric,
+ * never a root cause, opportunity, or grade.
  */
 function RankingTable({
   caption,
@@ -103,37 +106,39 @@ function RankingTable({
 }) {
   const ranked = rankGroups(groups, metricId);
   return (
-    <ScrollTable label={caption}>
+    <AnalyticalTable label={caption}>
       <thead>
-        <tr className="border-b text-left">
-          <th scope="col" className="px-3 py-2 font-medium">
-            Associated group
-          </th>
-          <th scope="col" className="px-3 py-2 font-medium">
-            {metricLabel}
-          </th>
-          <th scope="col" className="px-3 py-2 font-medium">
-            {populationLabel}
-          </th>
+        <tr>
+          <th scope="col">Associated group</th>
+          <th scope="col">{metricLabel}</th>
+          <th scope="col">{populationLabel}</th>
+          <th scope="col">Rank</th>
         </tr>
       </thead>
       <tbody>
-        {ranked.map((group) => {
+        {/* rankGroups places every available metric before any unavailable
+            one, so the display index is the rank; unavailable rows show an
+            em dash, never a rank and never zero. */}
+        {ranked.map((group, index) => {
           const denominator = metricDenominator(group, metricId);
+          const kpi = findKpi(group.kpis, metricId);
+          const available =
+            kpi !== null && kpi.status === "ok" && kpi.value !== null;
           return (
-            <tr key={group.key} className="border-b last:border-0">
-              <td className="px-3 py-2">{group.key}</td>
-              <td className="px-3 py-2">{rateText(group, metricId)}</td>
-              <td className="px-3 py-2">
+            <tr key={group.key}>
+              <td>{group.key}</td>
+              <td>{rateText(group, metricId)}</td>
+              <td>
                 {denominator === null
                   ? "Unavailable"
                   : denominator.toLocaleString("en-US")}
               </td>
+              <td>{available ? index + 1 : "—"}</td>
             </tr>
           );
         })}
       </tbody>
-    </ScrollTable>
+    </AnalyticalTable>
   );
 }
 
@@ -151,13 +156,16 @@ function DimensionSelect({
   onChange: (by: string) => void;
 }) {
   return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-sm font-medium">
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <label
+        htmlFor={id}
+        className="font-analytical text-[11px] font-medium tracking-wide text-muted-foreground uppercase"
+      >
         {label}
       </label>
       <select
         id={id}
-        className="rounded-md border bg-background px-2 py-1 text-sm"
+        className="max-w-56 truncate rounded-md border border-border bg-background px-2 py-1 text-[13px]"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >
@@ -644,7 +652,10 @@ function OrderDrilldown({
           />
         ) : (
           <>
-            <p className="text-sm text-muted-foreground" role="status">
+            <p
+              className="font-analytical text-sm text-muted-foreground tabular-nums"
+              role="status"
+            >
               {totalLabel}
             </p>
             <div className="mt-2">
@@ -689,7 +700,9 @@ function OrderDrilldown({
                 <tbody>
                   {rows.map((row) => (
                     <tr key={row.order_id} className="border-b last:border-0">
-                      <td className="px-3 py-2">{row.order_id}</td>
+                      <td className="px-3 py-2 font-analytical">
+                        {row.order_id}
+                      </td>
                       <td className="px-3 py-2">
                         {row.order_timestamp ?? "—"}
                       </td>
@@ -703,14 +716,18 @@ function OrderDrilldown({
                       <td className="px-3 py-2">
                         {row.shipment_outcome ?? "—"}
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2 text-right font-analytical tabular-nums">
                         {row.scheduled_shipping_days ?? "—"}
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2 text-right font-analytical tabular-nums">
                         {row.actual_shipping_days ?? "—"}
                       </td>
-                      <td className="px-3 py-2">{row.net_value}</td>
-                      <td className="px-3 py-2">{row.profit_total}</td>
+                      <td className="px-3 py-2 text-right font-analytical tabular-nums">
+                        {row.net_value}
+                      </td>
+                      <td className="px-3 py-2 text-right font-analytical tabular-nums">
+                        {row.profit_total}
+                      </td>
                       <td className="px-3 py-2">
                         <details>
                           <summary className="cursor-pointer">Details</summary>
@@ -747,7 +764,7 @@ function OrderDrilldown({
                 type="button"
                 onClick={() => void loadMore()}
                 disabled={loadingMore}
-                className="mt-2 rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
+                className="font-analytical mt-2 rounded-md border border-border px-3 py-1.5 text-[13px] disabled:opacity-50"
               >
                 {loadingMore
                   ? "Loading more orders…"
@@ -837,6 +854,11 @@ export default function DiagnosticsView() {
         ) : null}
         <p className="mt-1 text-sm text-muted-foreground" role="status">
           Session {session.sessionId.slice(0, 8)} · {sessionState ?? "starting"}
+        </p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Rankings describe observed association only — never causes, drivers,
+          or root causes. Start from a headline signal, compare grouped
+          associations, then inspect order-level evidence below.
         </p>
         {gated ? (
           <p className="mt-1 text-sm text-muted-foreground">

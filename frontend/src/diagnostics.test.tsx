@@ -382,8 +382,16 @@ describe("Phase-15B diagnostics rankings", () => {
     ]);
     const table = shipmentTable();
     expect(within(table).getByText("90.0%")).toBeInTheDocument();
-    // Every ranked rate carries its backend denominator beside it.
-    expect(within(table).getByText("4")).toBeInTheDocument();
+    // Every ranked rate carries its backend denominator beside it: the
+    // top-ranked Zeta row pairs 90.0% with its eligible population of 4
+    // and carries rank 1 in the final column.
+    const zeta = within(table)
+      .getAllByRole("row")
+      .find((row) => row.textContent?.includes("QM-Zeta"));
+    const zetaCells = within(zeta as HTMLElement).getAllByRole("cell");
+    expect(zetaCells[1].textContent).toBe("90.0%");
+    expect(zetaCells[2].textContent).toBe("4");
+    expect(zetaCells[3].textContent).toBe("1");
     // Unavailable stays unavailable with its backend reason, never zero.
     expect(
       within(table).getByText("Unavailable — empty-eligible-population"),
@@ -393,6 +401,35 @@ describe("Phase-15B diagnostics rankings", () => {
     expect(table.textContent).not.toMatch(
       /root cause|driver|best|worst|because/i,
     );
+  });
+
+  it("numbers ranks by display order with unavailable unranked", async () => {
+    renderSeeded(snapshotFor(SESSION_A, "READY"));
+    goToDiagnostics();
+    await screen.findByRole("table", {
+      name: "Associated groups ordered by observed late-shipment rate",
+    });
+    const table = shipmentTable();
+    expect(
+      within(table).getByRole("columnheader", { name: "Rank" }),
+    ).toBeInTheDocument();
+    // Display order Zeta, Alpha, Beta, Gamma, Void: ranks 1-4 then unranked.
+    const ranks = within(table)
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => within(row).getAllByRole("cell")[3].textContent);
+    expect(ranks).toEqual(["1", "2", "3", "4", "—"]);
+    // Rank is display order only: no winner language anywhere in the table.
+    expect(table.textContent).not.toMatch(/winner|medal|best|worst|grade/i);
+  });
+
+  it("keeps the association caveat in the normal reading flow", async () => {
+    renderSeeded(snapshotFor(SESSION_A, "READY"));
+    goToDiagnostics();
+    await screen.findByText("O-11");
+    expect(
+      screen.getByText(/observed association only — never/i),
+    ).toBeInTheDocument();
   });
 
   it("orders commercial loss rates with unavailable last", async () => {
@@ -625,6 +662,31 @@ describe("Phase-15B sanitized order drilldown", () => {
       expect(screen.getByText("O-11")).toBeInTheDocument();
     });
     expect(screen.queryByText("O-STALE")).not.toBeInTheDocument();
+  });
+
+  it("preserves every governed drilldown column without adding PII", async () => {
+    renderSeeded(snapshotFor(SESSION_A, "READY"));
+    goToDiagnostics();
+    await screen.findByText("O-11");
+    const table = screen.getByRole("table", {
+      name: "Filtered sanitized order records",
+    });
+    for (const header of [
+      "Order ID",
+      "Order date",
+      "Status",
+      "Shipping mode",
+      "Market / Region",
+      "Shipment outcome",
+      "Scheduled days",
+      "Actual days",
+      "Recorded net order value",
+      "Recorded profit",
+    ]) {
+      expect(
+        within(table).getByRole("columnheader", { name: header }),
+      ).toBeInTheDocument();
+    }
   });
 
   it("reports no axe violations on the loaded diagnostics view", async () => {
