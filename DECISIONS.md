@@ -1357,6 +1357,32 @@ Phase 16 must document how another user obtains the public V1 reference dataset,
 
 ---
 
+## ADR-042 — Phase-17 benchmark and measurement methodology
+
+**Status:** Accepted
+**Date:** 2026-09-26
+
+### Context
+
+Phase 17 must benchmark the pipeline and harden reliability, but no governed benchmark dataset, measurement method, or acceptance rule exists: ADR-027 and architecture §3 name working targets (~500k rows, few-minutes reference processing) while explicitly denying them guaranteed status, and the discovery audit found zero timers, zero memory measurement, and zero ≥100k-row tests in the repo. Without frozen methodology, any "optimization" could alter governed semantics or convert an aspiration into an unagreed threshold.
+
+### Decision
+
+- Benchmark datasets are deterministic synthetic DataCo-shaped files from a version-pinned generator run with a fixed seed (no DataCo bytes, no fabricated reference expectations): small (existing ≤15k fixtures), medium (~50–100k rows, mixed grain), large (one 180,519-row synthetic file matching only the governed reference row count and header shape, plus one 500k-row target-scale synthetic file). The 180,519-row tier does not reproduce or claim to reproduce DataCo's distribution, quality profile, cardinalities, KPI controls, or real-world behavior; synthetic benchmark expectations derive solely from the synthetic generator. Generator dimensions: order/product/customer counts, text width, category cardinality, multi-line mix, null/invalid rates, late/early/exact mix, negative-profit rate, cancel/fraud mix; duplicate-key negatives stay a separate fixture. Large files live only in `.tmp/benchmarks/` (covered by the gitignored `.tmp/`) and are never committed; they are deterministically regenerable. Benchmark reports record generator version, seed, tier, row count, source byte size, application/git revision, and environment (OS/platform, architecture, Python version, and Node version where frontend measurement is relevant).
+- Measurement uses stdlib only (`time.perf_counter` stage timers, `resource.getrusage` with macOS-bytes/Linux-KB normalization, pytest `--durations`, TestClient/curl end-to-end request elapsed timing, Vite output bytes). No psutil or new dependency. `ru_maxrss` is a process-level high-water RSS measure: it is environment-dependent, and inter-stage deltas must not be interpreted as exact independent per-stage memory consumption. Logs carry metadata only (row/byte counts, durations, artifact sizes, SHAs, latencies, process RSS) — never rows, values, PII, paths, or secrets. Stage durations belong to benchmark reports, not production artifacts or production logs, unless separately governed.
+- Metrics: per-stage durations (upload accept, validation, profiling, cleaning, canonicalization, KPI, total-to-READY), peak RSS, artifact disk bytes, per-endpoint elapsed latencies (overview/delivery/commercial/filter-options/orders page/filtered-export build), export download RSS behavior, bundle bytes. Bundle bytes and endpoint elapsed timings are distinct metrics; neither is presented as runtime responsiveness, paint performance, or compressed transfer size. No numeric performance threshold is frozen by this ADR; any future acceptance threshold must be adopted from measured baselines plus the agreed product target through an explicit governance update, never retrofitted to make observed results pass.
+- Target-vs-hard restated: 250 MB is the hard upload acceptance cap (not a throughput, duration, or memory guarantee); ~500k rows / few-minutes processing are validation targets (not requirements). Baseline and optimization measurements are informational until final Phase-17 acceptance criteria are explicitly frozen; only the final acceptance run against the governed methodology is release-blocking for Phase 17.
+- Reference sequencing: governance freeze, then benchmark harness / deterministic synthetic generator work may proceed (it changes no semantics), then the pending real DataCo verifications for Phases 6/8/9, then semantic optimization of parsing, canonicalization, or KPI internals. Semantic optimization covers parser/dtype behavior that can affect values, canonical aggregation rewrites, KPI computation rewrites, and null/category normalization changes; it does not cover benchmark harness, measurement utilities, or frontend measurement work.
+- Doc clarifications adopted with this ADR: architecture §4 pressure caps (5 sessions/2 GB) are examples, not implemented defaults; neither the manifest nor logs carry per-stage durations today — timing arrives with the benchmark harness.
+
+### Consequences
+
+- Phase 17 implementation may add the generator + harness and measure, but may not claim thresholds, add dependencies, or alter governed semantics without a further decision.
+- Optimizations stay constrained by the discovery audit's semantic list (grain, nulls, UNKNOWN_FLAGGED, eligibility, weighting, privacy, audit equation, determinism, artifact hashes, filters, export equivalence).
+- A future engine change (Polars/DuckDB) or chunked fallback still requires its own ADR with benchmark measurements as evidence.
+
+---
+
 ## Decision-change template
 
 Copy this section when proposing a new material decision:

@@ -50,7 +50,7 @@ Evidence: reference CSV ≈ 95.9 MB, 180,519 rows × 53 columns. Naive in-memory
 - **Layout (git-ignored, e.g., `.tmp/sessions/`):**
   ```
   .tmp/sessions/{uuid}/
-    manifest.json        # ids, versions, source hash/size/encoding, state, stage timings, error metadata
+    manifest.json        # ids, versions, source hash/size/encoding, state, error metadata (no per-stage timings yet; ADR-042)
     raw.csv              # immutable (read-only), only while the session can validly continue
     derived/             # canonical tables, DQ findings, cleaning log, KPI cache
     exports/             # built export artifacts for download
@@ -59,10 +59,10 @@ Evidence: reference CSV ≈ 95.9 MB, 180,519 rows × 53 columns. Naive in-memory
 - **Derived/working:** rebuilt deterministically from raw + code version; carries `source_row_number` provenance. Removed on reset, expiry, restart sweep, or failure.
 - **Exports:** built only on explicit request under `exports/`, served as downloads, subject to the same expiry as the session.
 - **Reset:** `DELETE /api/v1/sessions/{id}` removes the entire session tree idempotently (already-gone → success) and the UI returns to empty state.
-- **Expiry:** time TTL (default 24 h sliding on `lastAccessedAt`) plus pressure caps (e.g., keep 5 most-recent sessions / 2 GB total, whichever binds first). Exact values are config with documented defaults (Phase 3); behavior is what this contract fixes.
+- **Expiry:** time TTL (default 24 h sliding on `lastAccessedAt`) is implemented; pressure caps (e.g., keep 5 most-recent sessions / 2 GB total) are examples only, not implemented defaults — caps await a future ADR (ADR-042).
 - **Restart sweep:** on backend startup, scan session manifests; delete trees whose manifest is missing/incomplete, whose state is terminal-failed without retainable raw, or whose TTL/caps are exceeded. Log counts only.
 - **Failure cleanup:** on terminal ingestion/processing failure (session cannot validly continue): remove partial `derived/` files **and** the raw upload; retain only the privacy-safe manifest/error metadata needed for diagnostics (session ID, stage, error code, sizes, counts — never cell values or personal fields). For recoverable states where the session remains valid (e.g., a downstream stage can be retried from intact raw), the immutable raw may remain until reset/expiry.
-- **Logging allow-list:** session ID, stage, durations, byte/row counts, rule IDs + counts, app/schema versions, error codes. **Deny-list:** names, emails, streets, passwords, coordinates, IPs, full row contents, raw cell values, user file paths.
+- **Logging allow-list:** session ID, stage, byte/row counts, rule IDs + counts, app/schema versions, error codes (per-stage durations arrive with the benchmark harness; none are logged today). **Deny-list:** names, emails, streets, passwords, coordinates, IPs, full row contents, raw cell values, user file paths.
 
 ## 5. Component boundaries
 
