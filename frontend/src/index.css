@@ -230,6 +230,16 @@
   .shell-frame {
     border-color: var(--border-strong);
   }
+  /*
+   * Shared analytical strip frame (DESIGN.md §§3, 8, 11): the KPI strip and
+   * the filter scope region share one structural outer edge on
+   * --border-strong. Internal dividers stay on --border — KpiStrip renders
+   * them through a 1px grid gap, so cell joints never double-draw at any
+   * column count.
+   */
+  .strip-frame {
+    border-color: var(--border-strong);
+  }
   .nav-item {
     border-radius: var(--radius-lg);
     box-shadow: inset 0 -2px 0 transparent;

@@ -12,6 +12,63 @@ function toOptions(values: string[]): FilterOption[] {
   return values.map((value) => ({ value, label: value }));
 }
 
+function optionLabel(
+  options: ReadonlyArray<{ value: string; label: string }>,
+  value: string,
+): string {
+  return options.find((option) => option.value === value)?.label ?? value;
+}
+
+/**
+ * Read-only active-scope summary (DESIGN.md §11): derived solely from the
+ * existing shared filter state in render — no second state source, no query
+ * change. Labels mirror the control labels; closed-vocabulary values reuse
+ * the governed option labels; open-domain values render verbatim.
+ */
+function scopeSegments(filters: {
+  from: string | null;
+  to: string | null;
+  market: string | null;
+  region: string | null;
+  category: string | null;
+  shipping_mode: string | null;
+  order_status: string | null;
+  shipment_outcome: string | null;
+}): string[] {
+  const segments: string[] = [];
+  if (filters.from !== null && filters.from !== "") {
+    segments.push(`From: ${filters.from}`);
+  }
+  if (filters.to !== null && filters.to !== "") {
+    segments.push(`To: ${filters.to}`);
+  }
+  if (filters.market !== null) {
+    segments.push(`Market: ${filters.market}`);
+  }
+  if (filters.region !== null) {
+    segments.push(`Region: ${filters.region}`);
+  }
+  if (filters.category !== null) {
+    segments.push(`Category: ${filters.category}`);
+  }
+  if (filters.shipping_mode !== null) {
+    segments.push(
+      `Shipping mode: ${optionLabel(SHIPPING_MODE_OPTIONS, filters.shipping_mode)}`,
+    );
+  }
+  if (filters.order_status !== null) {
+    segments.push(
+      `Order status: ${optionLabel(ORDER_STATUS_OPTIONS, filters.order_status)}`,
+    );
+  }
+  if (filters.shipment_outcome !== null) {
+    segments.push(
+      `Shipment outcome: ${optionLabel(SHIPMENT_OUTCOME_OPTIONS, filters.shipment_outcome)}`,
+    );
+  }
+  return segments;
+}
+
 /**
  * Shared Phase-15 analytics filter bar (ADR-038). One control set bound to
  * the single shared filter state: changing any filter refreshes every
@@ -42,10 +99,12 @@ export default function FilterBar({ idPrefix }: { idPrefix: string }) {
     filters.to !== "" &&
     filters.from > filters.to;
 
+  const scope = scopeSegments(filters);
+
   return (
     <section
       aria-label="Analytics filters"
-      className="rounded-lg border border-border bg-card px-3 py-2.5"
+      className="strip-frame rounded-lg border bg-card px-3 py-2.5"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-analytical text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
@@ -68,6 +127,14 @@ export default function FilterBar({ idPrefix }: { idPrefix: string }) {
       <p className="mt-1 text-[11px] text-muted-foreground">
         Filters apply to Overview, Delivery, Commercial, and Diagnostics. Data
         Quality always describes the whole session.
+      </p>
+      {/* Plain readable text, always rendered so layout never shifts: neutral
+          copy at defaults, the active filter set otherwise. Not a live region
+          — rapid filter changes must not spam announcements. */}
+      <p className="mt-1 text-[11px] text-muted-foreground">
+        {scope.length === 0
+          ? "Scope: all data in this session."
+          : `Scope: ${scope.join(" · ")}`}
       </p>
       {openNote !== null ? (
         <p className="mt-1 text-sm text-muted-foreground" role="status">

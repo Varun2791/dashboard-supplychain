@@ -23,7 +23,10 @@ function KpiStripItem({ kpi }: { kpi: KpiResult }) {
   const note = missingNote(kpi);
   return (
     <div className="flex min-w-0 flex-col gap-0.5 px-3 py-2">
-      <p className="truncate text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+      {/* Governed KPI labels keep normal case and wrap (DESIGN.md §8):
+          never uppercase, never truncate; break-words contains unbroken
+          strings without ellipsis. */}
+      <p className="text-[12px] font-medium break-words text-muted-foreground">
         {kpi.label}
       </p>
       {unavailable || kpi.value === null ? (
@@ -43,7 +46,8 @@ function KpiStripItem({ kpi }: { kpi: KpiResult }) {
       {!unavailable && note !== null ? (
         <p className="text-[11px] text-muted-foreground">({note})</p>
       ) : null}
-      <p className="truncate text-[11px] text-muted-foreground">
+      {/* Governed population strings wrap like labels: never truncate. */}
+      <p className="text-[11px] break-words text-muted-foreground">
         {kpi.population}
       </p>
     </div>
@@ -54,6 +58,11 @@ function KpiStripItem({ kpi }: { kpi: KpiResult }) {
  * One analytical unit: the KPI collection reads as a single bordered strip
  * with internal dividers rather than unrelated floating cards. Available and
  * unavailable items share geometry so status changes cause no layout shift.
+ *
+ * Dividers are a 1px grid gap painted by the container background, so cell
+ * joints render one hairline at every column count — never the doubled seams
+ * `divide-x` + `divide-y` draws where cells meet. The outer edge is the
+ * shared structural strip frame; cells carry the card surface.
  */
 export function KpiStrip({
   kpis,
@@ -66,10 +75,10 @@ export function KpiStrip({
     <div
       role="list"
       aria-label={label}
-      className="grid grid-cols-2 divide-x divide-y divide-border overflow-hidden rounded-lg border bg-card sm:grid-cols-3 lg:grid-cols-4"
+      className="strip-frame grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-3 lg:grid-cols-4"
     >
       {kpis.map((kpi) => (
-        <div key={kpi.id} role="listitem" className="min-w-0">
+        <div key={kpi.id} role="listitem" className="min-w-0 bg-card">
           <KpiStripItem kpi={kpi} />
         </div>
       ))}
@@ -91,8 +100,10 @@ export function KpiStripDefinitions({
   summary: string;
 }) {
   return (
-    <details className="mt-2 rounded-lg border px-3 py-2 text-sm">
-      <summary className="cursor-pointer font-medium">{summary}</summary>
+    <details className="mt-3 border-t border-border pt-2 text-sm">
+      <summary className="cursor-pointer font-medium text-muted-foreground">
+        {summary}
+      </summary>
       <dl className="mt-2 flex flex-col gap-3">
         {kpis.map((kpi) => (
           <div key={kpi.id}>

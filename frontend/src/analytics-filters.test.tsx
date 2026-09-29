@@ -557,3 +557,72 @@ describe("Phase-15B shared analytics filters", () => {
     expect(screen.getByText("No dataset loaded")).toBeInTheDocument();
   });
 });
+
+describe("Slice B: filter scope summary", () => {
+  it("shows neutral default scope with no customer_segment control", async () => {
+    renderSeeded(snapshotFor(SESSION_A, "READY"));
+    await openOverview();
+    expect(
+      screen.getByText("Scope: all data in this session."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText(/customer segment/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("derives the summary from existing state and clears back to default", async () => {
+    renderSeeded(snapshotFor(SESSION_A, "READY"));
+    await openOverview();
+    fireEvent.change(screen.getByLabelText("Market"), {
+      target: { value: "M1" },
+    });
+    expect(screen.getByText("Scope: Market: M1")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: /clear market filter/i }),
+    );
+    expect(screen.getByLabelText("Market")).toHaveValue("");
+    expect(
+      screen.getByText("Scope: all data in this session."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Reset filters" }),
+    ).toBeDisabled();
+  });
+
+  it("lists multiple active filters with governed labels, query unchanged", async () => {
+    renderSeeded(snapshotFor(SESSION_A, "READY"));
+    await openOverview();
+    fireEvent.change(screen.getByLabelText("Market"), {
+      target: { value: "M2" },
+    });
+    fireEvent.change(screen.getByLabelText("Shipping mode"), {
+      target: { value: "SAME_DAY" },
+    });
+    expect(
+      screen.getByText("Scope: Market: M2 · Shipping mode: Same Day"),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        fetchCalls().some(
+          (url) =>
+            url.includes("/kpis/overview") &&
+            url.includes("market=M2") &&
+            url.includes("shipping_mode=SAME_DAY"),
+        ),
+      ).toBe(true);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
+    expect(
+      screen.getByText("Scope: all data in this session."),
+    ).toBeInTheDocument();
+  });
+
+  it("includes the active date range in the derived scope", async () => {
+    renderSeeded(snapshotFor(SESSION_A, "READY"));
+    await openOverview();
+    fireEvent.change(screen.getByLabelText("From (order date)"), {
+      target: { value: "2021-03-12" },
+    });
+    expect(screen.getByText("Scope: From: 2021-03-12")).toBeInTheDocument();
+  });
+});
