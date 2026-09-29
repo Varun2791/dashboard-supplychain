@@ -609,4 +609,192 @@ describe("Phase-10 session lifetime across navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delivery" }));
     expect(await axe(container)).toHaveNoViolations();
   });
+
+  it("converges a long-running session to READY with working Overview", async () => {
+    vi.useFakeTimers();
+    // M1 convergence: eight PROFILING observations (past the old six-poll
+    // cap) before the backend reaches READY. KPI and filter-option routes
+    // stay 409-gated until the status script has served READY, mirroring
+    // the backend contract — so a stuck poller leaves Overview loading.
+    let statusCalls = 0;
+    let readyServed = false;
+    const notReady = {
+      data: null,
+      meta: {},
+      error: {
+        code: "NOT_READY",
+        stage: "ANALYZING",
+        message: "KPI analysis has not completed yet.",
+        details: {},
+      },
+    };
+    const kpiResult = (
+      id: string,
+      label: string,
+      value: number | string | null,
+    ) => ({
+      id,
+      label,
+      value,
+      status: value === null ? "unavailable" : "ok",
+      numerator: value,
+      denominator: null,
+      population: `Population for ${id}.`,
+      exclusions: `Exclusions for ${id}.`,
+      reason: value === null ? "zero-denominator" : null,
+      missingDataCount: 0,
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: unknown) => {
+        const url = String(input);
+        let body: unknown;
+        let status = 200;
+        if (url.endsWith("/status")) {
+          statusCalls += 1;
+          const state = statusCalls <= 8 ? "PROFILING" : "READY";
+          if (state === "READY") {
+            readyServed = true;
+          }
+          body = lifetimeStatus(state);
+        } else if (url.endsWith("/schema")) {
+          body = LIFETIME_SCHEMA;
+        } else if (url.endsWith("/profile")) {
+          body = LIFETIME_PROFILE;
+        } else if (url.endsWith("/data-quality")) {
+          body = LIFETIME_QUALITY;
+        } else if (url.endsWith("/cleaning-report")) {
+          body = LIFETIME_CLEANING;
+        } else if (!readyServed) {
+          body = notReady;
+          status = 409;
+        } else if (url.includes("/filter-options")) {
+          body = {
+            data: {
+              dateRange: {
+                minOrderDate: "2015-01-01",
+                maxOrderDate: "2018-12-31",
+              },
+              markets: ["North"],
+              regions: ["West"],
+              categories: ["Sporting Goods"],
+            },
+            meta: {},
+            error: null,
+          };
+        } else if (url.includes("/kpis/overview")) {
+          body = {
+            data: {
+              kpis: [
+                kpiResult(
+                  "kpi.value.net",
+                  "Recorded net order value",
+                  "2500.00",
+                ),
+                kpiResult("kpi.profit.recorded", "Recorded profit", "125.00"),
+                kpiResult("kpi.margin.profit", "Profit margin", "0.05"),
+                kpiResult("kpi.ship.late_rate", "Late-shipment rate", "0.5"),
+                kpiResult(
+                  "kpi.ship.on_schedule_rate",
+                  "On-schedule shipment rate",
+                  "0.5",
+                ),
+                kpiResult("kpi.orders.count", "Orders", 10),
+                kpiResult(
+                  "kpi.orders.shipment_eligible_count",
+                  "Shipment-eligible orders",
+                  8,
+                ),
+                kpiResult("kpi.units.total", "Units", 25),
+                kpiResult("kpi.ship.late_count", "Late orders", 4),
+                kpiResult("kpi.ship.early_count", "Early orders", 2),
+                kpiResult(
+                  "kpi.ship.exact_count",
+                  "Exactly on-schedule orders",
+                  2,
+                ),
+              ],
+              totals: {
+                items: 12,
+                orders: 10,
+                eligibleOrders: 8,
+                grossValue: "2600.00",
+                discountTotal: "100.00",
+                netValue: "2500.00",
+                profitTotal: "125.00",
+                units: 25,
+              },
+            },
+            meta: {},
+            error: null,
+          };
+        } else if (url.includes("/kpis/delivery")) {
+          body = {
+            data: {
+              groups: [],
+              eligibleOrders: 8,
+              exclusions: "1 shipping-cancelled order excluded",
+            },
+            meta: {},
+            error: null,
+          };
+        } else if (url.includes("/kpis/commercial")) {
+          const group = (key: string) => ({
+            key,
+            kpis: [
+              kpiResult("kpi.value.net", "Recorded net order value", "2500.00"),
+              kpiResult("kpi.profit.recorded", "Recorded profit", "125.00"),
+            ],
+          });
+          body = url.includes("by=order_month")
+            ? {
+                data: {
+                  groups: [group("2024-01")],
+                  statusScope: "All order statuses included",
+                  weightedRates: { profitMargin: null, discountRate: null },
+                },
+                meta: {},
+                error: null,
+              }
+            : {
+                data: {
+                  groups: [group("North")],
+                  statusScope: "All order statuses included",
+                  weightedRates: { profitMargin: null, discountRate: null },
+                },
+                meta: {},
+                error: null,
+              };
+        } else {
+          body = lifetimeStatus("VALIDATING");
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(body), {
+            status,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }),
+    );
+    render(<App />);
+    fireEvent.change(screen.getByTestId("file-input"), {
+      target: { files: [lifetimeCsv()] },
+    });
+    fireEvent.click(screen.getByTestId("upload-button"));
+    await act(async () => {});
+    expect(screen.getByTestId("success-panel")).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30000);
+    });
+    // Past the old budget, the shared session state reaches READY.
+    expect(statusCalls).toBeGreaterThan(6);
+    expect(lifetimeBadge()).toHaveTextContent("READY");
+    expect(screen.getByTestId("status-note")).toHaveTextContent(
+      /kpi analysis is complete/i,
+    );
+    // READY-dependent UI converges instead of loading forever.
+    vi.useRealTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    expect(await screen.findAllByText("2,500.00")).not.toHaveLength(0);
+  });
 });

@@ -423,6 +423,75 @@ function csvFile(name = "orders.csv"): File {
   return new File(["order_id\n1\n"], name, { type: "text/csv" });
 }
 
+function uploadCsv(): void {
+  fireEvent.change(screen.getByTestId("file-input"), {
+    target: { files: [csvFile()] },
+  });
+  fireEvent.click(screen.getByRole("button", { name: /^upload$/i }));
+}
+
+/** Build a status body for any forward state from the phase fixtures. */
+function statusFor(state: string): unknown {
+  const base =
+    state === "READY"
+      ? STATUS_READY
+      : state === "ANALYZING"
+        ? STATUS_ANALYZING
+        : state === "CANONICALIZING"
+          ? STATUS_CANONICALIZING
+          : STATUS_VALIDATING;
+  return {
+    ...base,
+    data: { ...base.data, state, stage: state },
+    meta: { ...base.meta, sessionState: state },
+  };
+}
+
+function jsonResponse(body: unknown, status = 200): Promise<Response> {
+  return Promise.resolve(
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
+}
+
+/**
+ * Script the poll loop: serve each state in `states` per /status call, then
+ * hold the last; reports answer from the given bodies. Returns the /status
+ * call-count accessor.
+ */
+function stubPollingSequence(
+  states: string[],
+  qualityBody: unknown = QUALITY_OK,
+  cleaningBody: unknown = CLEANING_OK,
+): { statusCalls: () => number } {
+  let calls = 0;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: unknown) => {
+      const url = String(input);
+      let body: unknown;
+      if (url.endsWith("/status")) {
+        calls += 1;
+        body = statusFor(states[Math.min(calls - 1, states.length - 1)]);
+      } else if (url.endsWith("/schema")) {
+        body = SCHEMA_OK;
+      } else if (url.endsWith("/profile")) {
+        body = PROFILE_OK;
+      } else if (url.endsWith("/data-quality")) {
+        body = qualityBody;
+      } else if (url.endsWith("/cleaning-report")) {
+        body = cleaningBody;
+      } else {
+        body = STATUS_VALIDATING;
+      }
+      return jsonResponse(body);
+    }),
+  );
+  return { statusCalls: () => calls };
+}
+
 beforeEach(() => {
   FakeXMLHttpRequest.script = { status: 202, body: ACCEPTED_202 };
   vi.stubGlobal("XMLHttpRequest", FakeXMLHttpRequest);
@@ -484,25 +553,25 @@ describe("UploadSession", () => {
     expect(screen.getByRole("button", { name: /^upload$/i })).toBeDisabled();
   });
 
-  it("renders the 202 session facts and the pending-stages note", async () => {
+  it("renders the 202 session facts and keeps polling past the old budget", async () => {
     vi.useFakeTimers();
+    const { statusCalls } = stubPollingSequence(["VALIDATING"]);
     render(<UploadSession />);
-    fireEvent.change(screen.getByTestId("file-input"), {
-      target: { files: [csvFile()] },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /^upload$/i }));
+    uploadCsv();
     // Flush the scripted XHR + first status fetch (microtasks only).
     await act(async () => {});
     expect(screen.getByTestId("success-panel")).toBeInTheDocument();
     expect(screen.getByTestId("success-panel")).toHaveTextContent("orders.csv");
     expect(screen.getByTestId("success-panel")).toHaveTextContent("utf-8");
-    // Exhaust the bounded poll loop: state never leaves VALIDATING.
+    // A progressing state never settles on an attempt budget: well beyond
+    // the old 6 x 1.5s budget the loop is still observing, with no parked
+    // note and no error.
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(6 * 2000);
+      await vi.advanceTimersByTimeAsync(30000);
     });
-    expect(screen.getByTestId("status-note")).toHaveTextContent(
-      /not available in this build yet/i,
-    );
+    expect(statusCalls()).toBeGreaterThan(6);
+    expect(screen.queryByTestId("status-note")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("error-panel")).not.toBeInTheDocument();
   });
 
   it("renders the backend error envelope actionably", async () => {
@@ -672,23 +741,31 @@ describe("UploadSession", () => {
     expect(panel.querySelector("p")).not.toBeNull();
   });
 
-  it("states the analyzing park without claiming analytics", async () => {
-    stubPhase6Fetch();
+  it("keeps observing an ANALYZING session until READY instead of parking", async () => {
+    vi.useFakeTimers();
+    // ANALYZING never settles: the chained KPI worker still runs, so the
+    // loop must observe past the old budget and converge on READY.
+    const { statusCalls } = stubPollingSequence([
+      "ANALYZING",
+      "ANALYZING",
+      "ANALYZING",
+      "ANALYZING",
+      "ANALYZING",
+      "ANALYZING",
+      "ANALYZING",
+      "ANALYZING",
+      "READY",
+    ]);
     render(<UploadSession />);
-    fireEvent.change(screen.getByTestId("file-input"), {
-      target: { files: [csvFile()] },
+    uploadCsv();
+    await act(async () => {});
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30000);
     });
-    fireEvent.click(screen.getByRole("button", { name: /^upload$/i }));
-    const note = await screen.findByTestId("status-note");
-    expect(note).toHaveTextContent(/canonical tables are built/i);
-    expect(note).toHaveTextContent(/kpi analytics are not available/i);
-    for (const term of [
-      /analysis complete/i,
-      /dashboard ready/i,
-      /clean dataset/i,
-    ]) {
-      expect(note).not.toHaveTextContent(term);
-    }
+    expect(statusCalls()).toBeGreaterThan(6);
+    const note = screen.getByTestId("status-note");
+    expect(note).toHaveTextContent(/kpi analysis is complete/i);
+    expect(note).not.toHaveTextContent(/not available/i);
   });
 
   it("states analysis completion without the unavailable copy", async () => {
@@ -960,5 +1037,253 @@ describe("UploadSession", () => {
     await screen.findByTestId("quality-panel");
     expect(container.querySelector("script")).toBeNull();
     expect(container.innerHTML).not.toContain("<script>alert");
+  });
+
+  it("reaches READY after more progressing polls than the old budget allowed", async () => {
+    vi.useFakeTimers();
+    // The M1 shape: eight PROFILING observations (past the old six-poll
+    // cap) before the backend reaches READY.
+    const { statusCalls } = stubPollingSequence([
+      "PROFILING",
+      "PROFILING",
+      "PROFILING",
+      "PROFILING",
+      "PROFILING",
+      "PROFILING",
+      "PROFILING",
+      "PROFILING",
+      "READY",
+    ]);
+    render(<UploadSession />);
+    uploadCsv();
+    await act(async () => {});
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30000);
+    });
+    expect(statusCalls()).toBeGreaterThan(6);
+    expect(screen.getByTestId("status-note")).toHaveTextContent(
+      /kpi analysis is complete/i,
+    );
+    expect(screen.getByTestId("schema-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("quality-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("cleaning-panel")).toBeInTheDocument();
+    expect(screen.queryByTestId("error-panel")).not.toBeInTheDocument();
+  });
+
+  it("keeps observing transient CANONICALIZING until the pipeline advances", async () => {
+    vi.useFakeTimers();
+    // No gate evidence in the quality report: the canonical build is still
+    // running, so the loop must continue through ANALYZING to READY.
+    const { statusCalls } = stubPollingSequence([
+      "CANONICALIZING",
+      "CANONICALIZING",
+      "CANONICALIZING",
+      "ANALYZING",
+      "ANALYZING",
+      "READY",
+    ]);
+    render(<UploadSession />);
+    uploadCsv();
+    await act(async () => {});
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30000);
+    });
+    expect(statusCalls()).toBeGreaterThan(3);
+    expect(screen.getByTestId("status-note")).toHaveTextContent(
+      /kpi analysis is complete/i,
+    );
+  });
+
+  it("parks a gated CANONICALIZING session instead of polling forever", async () => {
+    vi.useFakeTimers();
+    // Governed gate evidence (DQ-KEY-001 blocks CANONICALIZATION): the
+    // session is parked until the input is fixed or replaced.
+    const { statusCalls } = stubPollingSequence(
+      ["CANONICALIZING"],
+      QUALITY_BLOCKED,
+      CLEANING_FLAGGED_ONLY,
+    );
+    render(<UploadSession />);
+    uploadCsv();
+    await act(async () => {});
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30000);
+    });
+    expect(screen.getByTestId("cleaning-panel")).toHaveTextContent(
+      /canonicalization is gated/i,
+    );
+    expect(statusCalls()).toBe(1);
+  });
+
+  it("stops polling once the session fails", async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: unknown) => {
+        const url = String(input);
+        let body: unknown = STATUS_VALIDATING;
+        if (url.endsWith("/status")) {
+          calls += 1;
+          body = calls < 3 ? STATUS_VALIDATING : STATUS_FAILED_SCHEMA;
+        }
+        return jsonResponse(body);
+      }),
+    );
+    render(<UploadSession />);
+    uploadCsv();
+    await act(async () => {});
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30000);
+    });
+    expect(screen.getByTestId("error-panel")).toHaveTextContent(
+      /missing 2 required columns/i,
+    );
+    const settled = calls;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30000);
+    });
+    expect(calls).toBe(settled);
+  });
+
+  it("stops polling with an expired message when the status call expires", async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    vi.stubGlobal("fetch", () =>
+      jsonResponse(
+        {
+          data: null,
+          meta: {},
+          error: {
+            code: "SESSION_EXPIRED",
+            stage: "VALIDATING",
+            message: "This upload session has expired. Upload the file again.",
+            details: {},
+          },
+        },
+        410,
+      ).then((response) => {
+        calls += 1;
+        return response;
+      }),
+    );
+    render(<UploadSession />);
+    uploadCsv();
+    await act(async () => {});
+    const panel = screen.getByTestId("error-panel");
+    expect(panel).toHaveTextContent(/this session expired/i);
+    expect(panel).toHaveTextContent(/SESSION_EXPIRED/);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30000);
+    });
+    expect(calls).toBe(1);
+  });
+
+  it("treats a 200 EXPIRED state as terminal", async () => {
+    vi.useFakeTimers();
+    const { statusCalls } = stubPollingSequence(["VALIDATING", "EXPIRED"]);
+    render(<UploadSession />);
+    uploadCsv();
+    await act(async () => {});
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30000);
+    });
+    const panel = screen.getByTestId("error-panel");
+    expect(panel).toHaveTextContent(/this session expired/i);
+    expect(panel).toHaveTextContent(/SESSION_EXPIRED/);
+    const settled = statusCalls();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30000);
+    });
+    expect(statusCalls()).toBe(settled);
+  });
+
+  it("stops safely on an unrecognized state without failing", async () => {
+    vi.useFakeTimers();
+    const { statusCalls } = stubPollingSequence([
+      "VALIDATING",
+      "RECALIBRATING",
+    ]);
+    render(<UploadSession />);
+    uploadCsv();
+    await act(async () => {});
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30000);
+    });
+    // The literal state stays visible; nothing is guessed forward and the
+    // loop stops (a second advance window fires no further status reads).
+    expect(screen.getByTestId("success-panel")).toHaveTextContent(
+      "RECALIBRATING",
+    );
+    expect(screen.queryByTestId("error-panel")).not.toBeInTheDocument();
+    expect(statusCalls()).toBe(2);
+  });
+
+  it("ignores a stale status response that arrives after reset", async () => {
+    let releaseStatus!: (body: unknown) => void;
+    const pending = new Promise<unknown>((resolve) => {
+      releaseStatus = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: unknown) => {
+        const url = String(input);
+        if (url.endsWith("/status")) {
+          return pending.then((body) => jsonResponse(body));
+        }
+        return jsonResponse({
+          data: { deleted: true },
+          meta: {},
+          error: null,
+        });
+      }),
+    );
+    render(<UploadSession />);
+    uploadCsv();
+    await screen.findByTestId("success-panel");
+    fireEvent.click(screen.getByRole("button", { name: /remove session/i }));
+    await waitFor(() => {
+      expect(screen.getByTestId("file-input")).toBeInTheDocument();
+    });
+    // The old session's late FAILED arrives after reset: it must not take
+    // over the fresh empty state.
+    await act(async () => {
+      releaseStatus(STATUS_FAILED_SCHEMA);
+    });
+    await act(async () => {});
+    expect(screen.queryByTestId("error-panel")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("success-panel")).not.toBeInTheDocument();
+    expect(screen.getByTestId("file-input")).toBeInTheDocument();
+  });
+
+  it("never overlaps status requests", async () => {
+    vi.useFakeTimers();
+    let inflight = 0;
+    let maxInflight = 0;
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            calls += 1;
+            inflight += 1;
+            maxInflight = Math.max(maxInflight, inflight);
+            window.setTimeout(() => {
+              inflight -= 1;
+              void jsonResponse(STATUS_VALIDATING).then(resolve);
+            }, 400);
+          }),
+      ),
+    );
+    render(<UploadSession />);
+    uploadCsv();
+    await act(async () => {});
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10000);
+    });
+    // Sequential chain: several polls fired, never two in flight.
+    expect(calls).toBeGreaterThan(1);
+    expect(maxInflight).toBe(1);
   });
 });

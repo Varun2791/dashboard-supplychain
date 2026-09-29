@@ -83,7 +83,7 @@ export default function AppShell({
                     aria-current={active ? "page" : undefined}
                     data-active={active}
                     onClick={() => setView(entry.id)}
-                    className="nav-item px-3 py-1.5 text-[13px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                    className="nav-item px-3 py-1.5 text-[13px] whitespace-nowrap text-muted-foreground hover:bg-accent hover:text-foreground"
                   >
                     {entry.label}
                   </button>

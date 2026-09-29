@@ -22,20 +22,22 @@ import type {
 
 const MAX_UPLOAD_MB = 250;
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
-const MAX_STATUS_POLLS = 6;
 const POLL_INTERVAL_MS = 1500;
-/** States that keep the status check running (bounded by MAX_STATUS_POLLS). */
+/**
+ * States that are always still progressing and contractually require future
+ * observation (ADR-029 lifecycle): the poll chain continues while the
+ * observed state is one of these, with no attempt budget. CANONICALIZING
+ * and ANALYZING are handled explicitly below: ANALYZING always progresses
+ * (the KPI worker is chained inline and reaches READY or FAILED, never
+ * parks), while CANONICALIZING progresses unless the data-quality evidence
+ * shows the governed canonicalization gate.
+ */
 const CONTINUING_STATES = new Set([
   "UPLOADING",
   "VALIDATING",
   "PROFILING",
   "CLEANING",
-  "CANONICALIZING",
 ]);
-/** Settled states: READY (KPI analysis complete), ANALYZING (canonical
- * tables built, analysis still running), or CANONICALIZING parked behind a
- * governed quality gate (reports still readable). */
-const SETTLED_STATES = new Set(["ANALYZING", "CANONICALIZING", "READY"]);
 
 const ERROR_GUIDANCE: Record<string, string> = {
   EMPTY_FILE:
@@ -132,6 +134,16 @@ function failureFromStatusError(error: ApiErrorPayload | null): Failure {
   };
 }
 
+function expiredSessionFailure(): Failure {
+  return {
+    message:
+      "This session expired. Upload the file again to start a new session.",
+    guidance: guidanceFor("SESSION_EXPIRED"),
+    code: "SESSION_EXPIRED",
+    missing: null,
+  };
+}
+
 type Phase = "idle" | "uploading" | "active";
 
 export interface SessionChange {
@@ -168,78 +180,126 @@ export default function UploadSession({
     }
   }, [session, sessionState, onSessionChange]);
 
-  // Bounded status check: confirm the stored session state, then stop.
-  // VALIDATING sessions resolve through schema validation on the server;
-  // a READY session (or an ANALYZING session with analysis still running,
-  // or a CANONICALIZING session parked behind a governed quality gate)
-  // loads its schema, profile, data-quality, and cleaning reports once
-  // each, a FAILED session surfaces its stored error.
-  // Polling never waits for later stages.
+  // State-driven status check: keep observing while the session is in a
+  // progressing state; settle only at a terminal, parked, or unknown state.
+  // UPLOADING/VALIDATING/PROFILING/CLEANING always progress. ANALYZING
+  // always progresses (canonical tables built, chained KPI analysis still
+  // running — it reaches READY or FAILED, never parks). CANONICALIZING
+  // progresses while the canonical build runs, but parks recoverably behind
+  // the governed quality gate when the data-quality evidence blocks it
+  // (raw retained; advances only when the input is fixed or replaced — no
+  // generic BLOCKED state). The status payload carries no parked marker
+  // (error stays null), so the gate evidence in the data-quality report is
+  // the settle signal — the same predicate the cleaning panel renders.
+  // READY/FAILED/EXPIRED terminate; unknown states stop safely without
+  // guessing. One chain, one bounded interval, no overlap: each tick awaits
+  // its status read before scheduling the next, and unmount/reset/session
+  // replacement cancels via `cancelled`.
   useEffect(() => {
     if (phase !== "active" || session === null || pollSettled) {
       return;
     }
     let cancelled = false;
     let timer = 0;
-    const check = async (attempt: number): Promise<void> => {
+    // Load the four settled-stage reports best-effort. Resolves with the
+    // fresh data-quality report, or null when the reports are momentarily
+    // unreadable (409 NOT_READY on a torn transition) or cancelled. Throws
+    // any other report failure for the outer handler.
+    const loadReports = async (): Promise<DataQualityData | null> => {
+      try {
+        const [report, profileReport, qualityReport, cleaningReport] =
+          await Promise.all([
+            fetchSchemaReport(session.sessionId),
+            fetchProfile(session.sessionId),
+            fetchDataQuality(session.sessionId),
+            fetchCleaningReport(session.sessionId),
+          ]);
+        if (cancelled) {
+          return null;
+        }
+        setSchema(report);
+        setProfile(profileReport);
+        setQuality(qualityReport);
+        setCleaning(cleaningReport);
+        return qualityReport;
+      } catch (error) {
+        if (cancelled) {
+          return null;
+        }
+        if (error instanceof ApiRequestError && error.code === "NOT_READY") {
+          return null;
+        }
+        throw error;
+      }
+    };
+    const check = async (): Promise<void> => {
       try {
         const status = await fetchSessionStatus(session.sessionId);
         if (cancelled) {
           return;
         }
         setSessionState(status.state);
-        setPollCount(attempt);
+        setPollCount((count) => count + 1);
         if (status.state === "FAILED") {
           setFailure(failureFromStatusError(status.error));
           setPollSettled(true);
           return;
         }
-        if (SETTLED_STATES.has(status.state)) {
-          try {
-            const [report, profileReport, qualityReport, cleaningReport] =
-              await Promise.all([
-                fetchSchemaReport(session.sessionId),
-                fetchProfile(session.sessionId),
-                fetchDataQuality(session.sessionId),
-                fetchCleaningReport(session.sessionId),
-              ]);
-            if (cancelled) {
-              return;
-            }
-            setSchema(report);
-            setProfile(profileReport);
-            setQuality(qualityReport);
-            setCleaning(cleaningReport);
-            setPollSettled(true);
-          } catch (error) {
-            if (cancelled) {
-              return;
-            }
-            if (
-              error instanceof ApiRequestError &&
-              error.code === "NOT_READY" &&
-              attempt < MAX_STATUS_POLLS
-            ) {
-              // Reports still pending: retry through the poll loop.
-              timer = window.setTimeout(() => {
-                void check(attempt + 1);
-              }, POLL_INTERVAL_MS);
-            } else {
-              setFailure(toFailure(error));
-              setPollSettled(true);
-            }
-          }
+        if (status.state === "EXPIRED") {
+          setFailure(expiredSessionFailure());
+          setPollSettled(true);
           return;
         }
         if (
-          !CONTINUING_STATES.has(status.state) ||
-          attempt >= MAX_STATUS_POLLS
+          status.state === "READY" ||
+          status.state === "ANALYZING" ||
+          status.state === "CANONICALIZING"
         ) {
+          const quality = await loadReports();
+          if (cancelled) {
+            return;
+          }
+          if (status.state === "READY") {
+            if (quality === null) {
+              // Torn transition: READY observed but reports momentarily
+              // unreadable; retry on the next tick.
+              timer = window.setTimeout(() => {
+                void check();
+              }, POLL_INTERVAL_MS);
+              return;
+            }
+            setPollSettled(true);
+            return;
+          }
+          if (status.state === "ANALYZING") {
+            // KPI analysis still running; never settle here.
+            timer = window.setTimeout(() => {
+              void check();
+            }, POLL_INTERVAL_MS);
+            return;
+          }
+          // CANONICALIZING: settle only on governed gate evidence.
+          if (
+            quality !== null &&
+            quality.issues.some(
+              (issue) => issue.blockedStage === "CANONICALIZATION",
+            )
+          ) {
+            setPollSettled(true);
+            return;
+          }
+          timer = window.setTimeout(() => {
+            void check();
+          }, POLL_INTERVAL_MS);
+          return;
+        }
+        if (!CONTINUING_STATES.has(status.state)) {
+          // Unknown/unrecognized state: stop safely, never guess forward.
           setPollSettled(true);
           return;
         }
         timer = window.setTimeout(() => {
-          void check(attempt + 1);
+          void check();
         }, POLL_INTERVAL_MS);
       } catch (error) {
         if (cancelled) {
@@ -249,7 +309,7 @@ export default function UploadSession({
         setPollSettled(true);
       }
     };
-    void check(1);
+    void check();
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
