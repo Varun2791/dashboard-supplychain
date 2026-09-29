@@ -57,7 +57,7 @@ export default function AppShell({
   const [view, setView] = useState<DashboardView>("upload");
   return (
     <div className="bg-background text-foreground flex min-h-svh flex-col">
-      <header className="bg-card border-b border-border">
+      <header className="bg-card border-b shell-frame">
         <div className="mx-auto flex w-full max-w-[80rem] flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6">
           <div>
             <h1 className="text-base font-semibold tracking-tight">

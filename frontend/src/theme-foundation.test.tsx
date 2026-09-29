@@ -33,6 +33,7 @@ describe("foundation slice 1: deterministic dark theme", () => {
       "--text-muted",
       "--chart-grid",
       "--chart-secondary",
+      "--border-strong",
       "--status-error",
       "--status-warning",
       "--status-ok",
@@ -42,6 +43,16 @@ describe("foundation slice 1: deterministic dark theme", () => {
     }
     expect(css).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
     expect(css).not.toContain("linear-gradient");
+  });
+
+  it("holds the data-brutalist geometry scale and eyebrow utility", () => {
+    // Sheets cap at 6px (rounded-lg), controls land near 4px (rounded-md).
+    expect(css).toMatch(/--radius:\s*0\.375rem/);
+    expect(css).toContain(".eyebrow");
+    // Structural edges resolve through the shell-frame role, not a
+    // Tailwind utility (no `border-strong` utility is generated).
+    expect(css).toContain(".shell-frame");
+    expect(css).toContain("var(--border-strong)");
   });
 
   it("ships focus-visible and reduced-motion foundations", () => {
