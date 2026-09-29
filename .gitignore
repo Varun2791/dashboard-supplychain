@@ -51,3 +51,6 @@ Thumbs.db
 # Graft structural-context pilot (ADR-034; local generated state, never committed)
 graft/
 .graft/
+
+# Playwright MCP output (snapshots, console logs, screenshots; never committed)
+.playwright-mcp/
