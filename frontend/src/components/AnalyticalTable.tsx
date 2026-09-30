@@ -25,3 +25,29 @@ export function AnalyticalTable({
     </div>
   );
 }
+
+/**
+ * Plain internal-scroll wrapper (Slice C thin-shell consolidation,
+ * DESIGN.md §10). For tables whose non-first columns are NOT all numeric
+ * (mixed text columns such as DQ field tables or the order drilldown),
+ * the AnalyticalTable numeric-alignment rule would misalign text — those
+ * tables keep this neutral wrapper and own their own cell alignment.
+ * It owns no columns, sorting, or semantics either; it only guarantees
+ * the table scrolls inside its owned region instead of overflowing the
+ * page. Views render their own thead/tbody.
+ */
+export function ScrollTable({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="overflow-x-auto rounded-lg border">
+      <table aria-label={label} className="w-full text-sm">
+        {children}
+      </table>
+    </div>
+  );
+}

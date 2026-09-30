@@ -56,10 +56,15 @@ export const chartNumericTick = {
   fontFamily: "var(--font-mono)",
 } as const;
 
-/** Grid: dashed hairlines on the governed grid token. */
+/**
+ * Grid: horizontal-only dashed hairlines on the governed grid token.
+ * Verticals are off so the plot keeps orientation structure without
+ * spreadsheet graph-paper overload; the marks stay the loudest element.
+ */
 export const chartGridProps = {
   stroke: "var(--chart-grid)",
   strokeDasharray: "3 3",
+  vertical: false,
 } as const;
 
 /** Axis lines on the restrained border token; tick marks off. */
@@ -68,15 +73,17 @@ export const chartAxisLine = {
 } as const;
 
 /**
- * Dark elevated tooltip (slice 3, DESIGN.md §9): popover surface,
- * restrained border, mono/tabular values. Tooltips annotate; the
- * table-under-chart fallback remains the accessible record.
+ * Dark elevated tooltip (Slice C, DESIGN.md §9): popover surface,
+ * structural-edge border, near-square corners, mono/tabular values.
+ * A compact technical readout — label plus series/value, no
+ * interpretation. Tooltips annotate; the table-under-chart fallback
+ * remains the accessible record.
  */
 export const chartTooltipProps = {
   contentStyle: {
     backgroundColor: "var(--popover)",
-    border: "1px solid var(--border)",
-    borderRadius: "8px",
+    border: "1px solid var(--border-strong)",
+    borderRadius: "6px",
     fontSize: "12px",
     color: "var(--popover-foreground)",
   },
@@ -99,9 +106,33 @@ export const chartBarCursor = {
   fill: "var(--chart-grid)",
 } as const;
 
-/** Compact legends that wrap on narrow layouts. */
+/**
+ * Compact legends that wrap on narrow layouts. Legends render only where
+ * they disambiguate multiple series (the two-series trend chart);
+ * single-series bar charts carry no legend chrome — the axis label,
+ * caption, and fallback table already name the one series.
+ */
 export const chartLegendProps = {
   wrapperStyle: { fontSize: "12px" },
+} as const;
+
+/**
+ * Category-axis label policy (Slice C): keep first/last labels plus
+ * whatever fits between, matching the existing trend-chart behavior.
+ * Hidden tick labels stay fully available in the tooltip and in the
+ * chart's fallback table — the chart is never the only record.
+ */
+export const chartXAxisProps = {
+  interval: "preserveStartEnd",
+} as const;
+
+/**
+ * Bar geometry cap (Slice C): wide single-group bars must not become
+ * oversized marks that out-signal the frame. Narrow multi-group bars
+ * never reach the cap, so crowded breakdowns are unaffected.
+ */
+export const chartBarProps = {
+  maxBarSize: 64,
 } as const;
 
 /**

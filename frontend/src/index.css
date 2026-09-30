@@ -269,11 +269,15 @@
 }
 
 /*
- * Shared analytical table presentation (slice 3, DESIGN.md §10): dense
- * rows, compact header hierarchy with a strong bottom border, right-aligned
- * mono/tabular numerics in every non-first column, subtle row dividers, and
- * a restrained hover tint. Rows are noninteractive: never cursor-pointer.
- * Views own columns, values, and formatting; this layer owns alignment.
+ * Shared analytical table presentation (Slice C, DESIGN.md §10): dense
+ * rows, compact header hierarchy with a strong bottom border on the
+ * structural edge token, right-aligned mono/tabular numerics in every
+ * non-first column, subtle row dividers, and a restrained hover tint.
+ * Rows are noninteractive: never cursor-pointer. Uppercase headers are
+ * the deliberate technical-header role here (11px mono eyebrow-scale over
+ * a strong rule, never body copy); governed KPI labels elsewhere keep
+ * normal case per DESIGN.md §8. Views own columns, values, and
+ * formatting; this layer owns alignment.
  */
 @layer components {
   .analytical-table th {
@@ -287,7 +291,7 @@
     color: var(--text-muted);
     text-align: left;
     vertical-align: bottom;
-    border-bottom: 2px solid var(--input);
+    border-bottom: 2px solid var(--border-strong);
   }
   .analytical-table td {
     padding: 0.5rem 0.75rem;
@@ -309,6 +313,27 @@
   }
   .analytical-table tbody tr:hover {
     background: color-mix(in oklch, var(--foreground) 4%, transparent);
+  }
+  /*
+   * Sticky behavior is strictly opt-in (Slice C): no table gets sticky
+   * headers or first columns by default. Enable only where rendered
+   * evidence shows dense-table comprehension materially improves, and
+   * verify opaque backgrounds, z-index, keyboard/focus, and mobile scroll.
+   * Currently enabled nowhere: grouped breakdowns are short and the
+   * drilldown is paginated, so sticky would add chrome without value.
+   */
+  .analytical-table--sticky-head thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--card);
+  }
+  .analytical-table--sticky-first-col tbody th[scope="row"],
+  .analytical-table--sticky-first-col thead th:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--card);
   }
 }
 

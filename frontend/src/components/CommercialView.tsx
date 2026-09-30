@@ -3,7 +3,6 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -23,14 +22,15 @@ import type {
 import {
   chartAxisLine,
   chartBarCursor,
+  chartBarProps,
   chartGridProps,
   chartIsAnimationActive,
-  chartLegendProps,
   chartMargins,
   chartNumericTick,
   chartSeries,
   chartTick,
   chartTooltipProps,
+  chartXAxisProps,
 } from "@/lib/chart-theme";
 import { formatKpiValue } from "@/lib/kpi-format";
 import { AnalyticalTable } from "@/components/AnalyticalTable";
@@ -195,6 +195,7 @@ function NetValueChart({
               tick={chartTick}
               tickLine={false}
               axisLine={chartAxisLine}
+              {...chartXAxisProps}
             />
             <YAxis
               tick={chartNumericTick}
@@ -203,12 +204,12 @@ function NetValueChart({
               width={56}
             />
             <Tooltip {...chartTooltipProps} cursor={chartBarCursor} />
-            <Legend {...chartLegendProps} />
             <Bar
               dataKey="net"
               name="Recorded net order value"
               fill={chartSeries.primary}
               isAnimationActive={chartIsAnimationActive}
+              {...chartBarProps}
             />
           </BarChart>
         </ResponsiveContainer>

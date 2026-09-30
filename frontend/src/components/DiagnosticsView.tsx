@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
 import {
   ApiRequestError,
   fetchKpisCommercial,
@@ -16,7 +15,7 @@ import type {
 import { useAnalyticsFilters } from "@/lib/analytics-filters";
 import { findKpi, metricDenominator, rankGroups } from "@/lib/diagnostics-rank";
 import { formatKpiValue } from "@/lib/kpi-format";
-import { AnalyticalTable } from "@/components/AnalyticalTable";
+import { AnalyticalTable, ScrollTable } from "@/components/AnalyticalTable";
 import { useSession } from "@/lib/session";
 import { VIEWS } from "@/lib/view-registry";
 import FilterBar from "@/components/FilterBar";
@@ -52,22 +51,6 @@ function failureMessage(error: unknown, fallback: string): string {
     return error.message;
   }
   return fallback;
-}
-
-function ScrollTable({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="overflow-x-auto rounded-lg border">
-      <table aria-label={label} className="w-full text-sm">
-        {children}
-      </table>
-    </div>
-  );
 }
 
 function rateText(group: KpiGroup, metricId: string): string {

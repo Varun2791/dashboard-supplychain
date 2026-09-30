@@ -27,6 +27,7 @@ import type {
 import {
   chartAxisLine,
   chartBarCursor,
+  chartBarProps,
   chartGridProps,
   chartIsAnimationActive,
   chartLegendProps,
@@ -36,6 +37,7 @@ import {
   chartSeries,
   chartTick,
   chartTooltipProps,
+  chartXAxisProps,
 } from "@/lib/chart-theme";
 import { OVERVIEW_CARD_IDS, formatKpiValue } from "@/lib/kpi-format";
 import { KpiStrip, KpiStripDefinitions } from "@/components/KpiStrip";
@@ -136,7 +138,7 @@ function TrendChart({ trend }: { trend: KpiCommercialData }) {
                   tick={chartTick}
                   tickLine={false}
                   axisLine={chartAxisLine}
-                  interval="preserveStartEnd"
+                  {...chartXAxisProps}
                 />
                 <YAxis
                   tick={chartNumericTick}
@@ -262,6 +264,7 @@ function OutcomeDistribution({
                   tick={chartTick}
                   tickLine={false}
                   axisLine={chartAxisLine}
+                  {...chartXAxisProps}
                 />
                 <YAxis
                   tick={chartNumericTick}
@@ -276,6 +279,7 @@ function OutcomeDistribution({
                   name="Orders (count)"
                   fill={chartSeries.primary}
                   isAnimationActive={chartIsAnimationActive}
+                  {...chartBarProps}
                 />
               </BarChart>
             </ResponsiveContainer>

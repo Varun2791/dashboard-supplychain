@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
 import {
   ApiRequestError,
   fetchCleaningReport,
@@ -14,6 +13,7 @@ import type {
   SchemaReportData,
 } from "@/lib/api";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
+import { ScrollTable } from "@/components/AnalyticalTable";
 import { useSession } from "@/lib/session";
 import { VIEWS } from "@/lib/view-registry";
 import ExportSection from "@/components/ExportSection";
@@ -52,22 +52,6 @@ function toFailure(error: unknown): Failure {
 
 function plural(count: number, one: string, many: string): string {
   return count === 1 ? one : many;
-}
-
-function ScrollTable({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="overflow-x-auto rounded-lg border">
-      <table aria-label={label} className="w-full text-sm">
-        {children}
-      </table>
-    </div>
-  );
 }
 
 function SchemaCoverage({ schema }: { schema: SchemaReportData }) {
