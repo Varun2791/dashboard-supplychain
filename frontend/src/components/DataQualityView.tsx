@@ -106,7 +106,7 @@ function SchemaCoverage({ schema }: { schema: SchemaReportData }) {
         </p>
       )}
       <div className="mt-3 flex flex-col gap-2 text-sm">
-        <details className="rounded-lg border px-3 py-2">
+        <details className="border-t border-border pt-2">
           <summary className="cursor-pointer font-medium">
             Excluded columns ({excluded.length}): privacy and governed
             exclusions
@@ -127,7 +127,7 @@ function SchemaCoverage({ schema }: { schema: SchemaReportData }) {
             </p>
           )}
         </details>
-        <details className="rounded-lg border px-3 py-2">
+        <details className="border-t border-border pt-2">
           <summary className="cursor-pointer font-medium">
             Redundant copies ({redundant.length}): recognized, never mapped
           </summary>
@@ -147,7 +147,7 @@ function SchemaCoverage({ schema }: { schema: SchemaReportData }) {
             </p>
           )}
         </details>
-        <details className="rounded-lg border px-3 py-2">
+        <details className="border-t border-border pt-2">
           <summary className="cursor-pointer font-medium">
             Unknown columns ({unknown.length}): quarantined
           </summary>
@@ -344,7 +344,7 @@ function SeverityStrip({ quality }: { quality: DataQualityData }) {
       <h3 id="dq-severity-heading" className="text-base font-semibold">
         Severity distribution
       </h3>
-      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border bg-card px-3 py-2 text-sm">
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
         <span className="flex items-center gap-1.5">
           <span
             aria-hidden="true"
@@ -460,7 +460,9 @@ function IssuesBySeverity({ quality }: { quality: DataQualityData }) {
                           />
                           {issue.ruleId}
                         </td>
-                        <td className="px-3 py-2">{issue.count}</td>
+                        <td className="px-3 py-2 text-right font-analytical tabular-nums">
+                          {issue.count}
+                        </td>
                         <td className="px-3 py-2">{issue.treatment}</td>
                         <td className="px-3 py-2">
                           {issue.blockedStage === null ? (
@@ -510,11 +512,27 @@ function CleaningAudit({ cleaning }: { cleaning: CleaningReportData }) {
         Cleaning audit log
       </h3>
       <p className="mt-1 text-sm text-muted-foreground">
-        Totals below are presentational sums of the audited steps:{" "}
-        {totals.detected} detected — {totals.fixed} fixed, {totals.flagged}{" "}
-        flagged, {totals.excluded} excluded, {totals.unchanged} unchanged.
-        Detected is not the same as fixed.
+        Totals below are presentational sums of the audited steps. Detected is
+        not the same as fixed.
       </p>
+      <div
+        role="list"
+        aria-label="Cleaning accounting"
+        className="strip-frame mt-2 grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-5"
+      >
+        {(
+          ["detected", "fixed", "flagged", "excluded", "unchanged"] as const
+        ).map((verb) => (
+          <div key={verb} role="listitem" className="min-w-0 bg-card px-3 py-2">
+            <p className="text-[12px] break-words text-muted-foreground">
+              {verb}
+            </p>
+            <p className="font-analytical text-lg leading-snug font-semibold tracking-tight tabular-nums">
+              {totals[verb].toLocaleString("en-US")}
+            </p>
+          </div>
+        ))}
+      </div>
       {cleaning.steps.length > 0 ? (
         <div className="mt-2">
           <ScrollTable label="Cleaning audit log">
@@ -562,11 +580,21 @@ function CleaningAudit({ cleaning }: { cleaning: CleaningReportData }) {
                       step.field
                     )}
                   </td>
-                  <td className="px-3 py-2">{step.detected}</td>
-                  <td className="px-3 py-2">{step.fixed}</td>
-                  <td className="px-3 py-2">{step.flagged}</td>
-                  <td className="px-3 py-2">{step.excluded}</td>
-                  <td className="px-3 py-2">{step.unchanged}</td>
+                  <td className="px-3 py-2 text-right font-analytical tabular-nums">
+                    {step.detected}
+                  </td>
+                  <td className="px-3 py-2 text-right font-analytical tabular-nums">
+                    {step.fixed}
+                  </td>
+                  <td className="px-3 py-2 text-right font-analytical tabular-nums">
+                    {step.flagged}
+                  </td>
+                  <td className="px-3 py-2 text-right font-analytical tabular-nums">
+                    {step.excluded}
+                  </td>
+                  <td className="px-3 py-2 text-right font-analytical tabular-nums">
+                    {step.unchanged}
+                  </td>
                   <td className="px-3 py-2">
                     {step.reason}
                     {step.detected !==

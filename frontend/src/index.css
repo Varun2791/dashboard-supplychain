@@ -337,6 +337,58 @@
   }
 }
 
+/*
+ * Literal segmented session pipeline (Slice D, DESIGN.md §13): one
+ * bordered segment per process stage, wrapping safely at 375px. Tones
+ * derive from actual backend state only — done segments stay muted with
+ * check marks, the current segment takes an accent edge plus heavier
+ * weight alongside `aria-current="step"`, future segments stay muted.
+ * Terminal FAILED / EXPIRED never join the segment line; they render as
+ * a separate status line below. No percentages, no animation, no pulse,
+ * no BLOCKED stage, no waiver affordance.
+ */
+@layer components {
+  .lifecycle-segments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .lifecycle-segments li {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-family:
+      "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .lifecycle-segments li[data-tone="current"] {
+    border-color: var(--accent-blue);
+    background: color-mix(in oklch, var(--accent-blue) 10%, transparent);
+    color: var(--foreground);
+    font-weight: 600;
+  }
+  .lifecycle-status {
+    margin-top: 4px;
+    font-family:
+      "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .lifecycle-status[data-status="failed"] {
+    color: var(--status-error);
+  }
+  .lifecycle-status[data-status="expired"] {
+    color: var(--text-muted);
+  }
+  .lifecycle-status span {
+    font-weight: 400;
+  }
+}
+
 /* Compact operational status marker: color carries state, text keeps the
  * governed state name. No animation, no invented states. */
 .session-dot {

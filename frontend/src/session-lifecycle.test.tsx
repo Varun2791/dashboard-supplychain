@@ -80,10 +80,42 @@ describe("SessionLifecycle (conceptual pipeline display)", () => {
 
   it("distinguishes failed from expired without inventing BLOCKED", () => {
     const { rerender } = render(<SessionLifecycle state="FAILED" />);
-    expect(screen.getByText(/· Failed/)).toBeInTheDocument();
+    const pipeline = screen.getByRole("list", { name: "Session pipeline" });
+    // Six literal process stages, no arrow glyphs, no terminal stage.
+    expect(pipeline.textContent).not.toMatch(/→/);
+    for (const step of [
+      "Upload",
+      "Profile",
+      "Validate",
+      "Clean",
+      "Analyze",
+      "Dashboard",
+    ]) {
+      expect(pipeline).toHaveTextContent(step);
+    }
+    // Terminal status renders as a separate status line, outside the list.
+    const failed = screen.getByRole("status");
+    expect(failed).toHaveTextContent("Failed");
+    expect(failed).toHaveTextContent(/not a pipeline stage/);
+    expect(pipeline).not.toHaveTextContent("Failed");
     expect(document.body.textContent).not.toMatch(/blocked/i);
     rerender(<SessionLifecycle state="EXPIRED" />);
-    expect(screen.getByText(/· Expired/)).toBeInTheDocument();
-    expect(screen.queryByText(/· Failed/)).not.toBeInTheDocument();
+    const expired = screen.getByRole("status");
+    expect(expired).toHaveTextContent("Expired");
+    expect(expired).toHaveTextContent(/not a pipeline stage/);
+    expect(pipeline).not.toHaveTextContent("Expired");
+    expect(screen.queryByText("Failed")).not.toBeInTheDocument();
+  });
+
+  it("marks done and current segments without color alone", () => {
+    render(<SessionLifecycle state="CLEANING" />);
+    const pipeline = screen.getByRole("list", { name: "Session pipeline" });
+    expect(pipeline.textContent).toMatch(/✓/);
+    expect(screen.getByText("Clean").closest("[aria-current]")).toHaveAttribute(
+      "aria-current",
+      "step",
+    );
+    // Terminal markers never join the segment line for active states.
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 });

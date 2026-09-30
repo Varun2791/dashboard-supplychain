@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
@@ -331,9 +337,30 @@ describe("Phase-11 Data Quality view", () => {
     ]) {
       expect(screen.getByText(header)).toBeInTheDocument();
     }
-    expect(screen.getAllByText("flagged")).toHaveLength(2);
-    expect(screen.getByText("excluded")).toBeInTheDocument();
+    // The audit register strips the five verbs as comparable cells with
+    // backend counts; the ledger table below keeps the same vocabulary.
+    const register = screen.getByRole("list", { name: "Cleaning accounting" });
+    for (const verb of [
+      "detected",
+      "fixed",
+      "flagged",
+      "excluded",
+      "unchanged",
+    ]) {
+      expect(within(register).getByText(verb)).toBeInTheDocument();
+    }
     expect(screen.queryByText(/failed/i)).not.toBeInTheDocument();
+  });
+
+  it("shows genuine zero accounting counts instead of hiding them", async () => {
+    renderSeeded(snapshotFor(SESSION_A, "READY"));
+    goToDataQuality();
+    await screen.findByText(/7 order-item lines/);
+    // The fixture reports zero excluded/unchanged rows: the register shows
+    // 0 (a real backend count), never "Unavailable" and never a hidden cell.
+    const register = screen.getByRole("list", { name: "Cleaning accounting" });
+    expect(register).toHaveTextContent("0");
+    expect(register).not.toHaveTextContent(/unavailable/i);
   });
 
   it("explains blocked stages as recoverable gates, not terminal failure", async () => {
