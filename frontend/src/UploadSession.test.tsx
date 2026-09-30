@@ -513,6 +513,17 @@ describe("UploadSession", () => {
     expect(screen.getByText(/maximum 250 mb/i)).toBeInTheDocument();
   });
 
+  it("states the CSV-only intake spec beside file selection", () => {
+    render(<UploadSession />);
+    // Technical intake framing: the dropzone states the accepted type, the
+    // hard cap, and local processing without claiming cloud or AI handling.
+    expect(screen.getByText(/drag and drop a \.csv file/i)).toBeInTheDocument();
+    expect(screen.getByText(/csv only/i)).toBeInTheDocument();
+    expect(screen.getByText(/250 mb maximum/i)).toBeInTheDocument();
+    expect(screen.getByText(/processed on this machine/i)).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/xlsx|excel|parquet/i);
+  });
+
   it("shows the selected file before uploading", () => {
     render(<UploadSession />);
     fireEvent.change(screen.getByTestId("file-input"), {

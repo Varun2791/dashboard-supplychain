@@ -72,7 +72,8 @@ function rateText(group: KpiGroup, metricId: string): string {
  * ascending tie-break, unavailable after available (never ranked as zero).
  * Every ranked rate shows its backend denominator beside it. Rank numbers
  * reflect display order only: rank 1 means highest on the shown metric,
- * never a root cause, opportunity, or grade.
+ * never a root cause, opportunity, or grade. Rank cells render muted so the
+ * order reads as a subdued index, never a podium.
  */
 function RankingTable({
   caption,
@@ -116,7 +117,9 @@ function RankingTable({
                   ? "Unavailable"
                   : denominator.toLocaleString("en-US")}
               </td>
-              <td>{available ? index + 1 : "—"}</td>
+              <td className="text-muted-foreground">
+                {available ? index + 1 : "—"}
+              </td>
             </tr>
           );
         })}

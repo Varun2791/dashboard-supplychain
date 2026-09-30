@@ -395,6 +395,25 @@ describe("Phase-16B export experience", () => {
     expect(text).not.toMatch(/\bZIP\b/);
   });
 
+  it("labels each register row with its governed artifact id", async () => {
+    renderSeeded(snapshotFor(SESSION_A, "READY"));
+    await goToDataQualityReady();
+    // The compact register names the backend artifact id beside each title
+    // so the downloaded file maps to a governed kind, not a pretty label.
+    for (const id of [
+      "cleaned_items",
+      "orders",
+      "quality_report",
+      "cleaning_report",
+    ]) {
+      expect(screen.getByText(id)).toBeInTheDocument();
+    }
+    const text = document.body.textContent ?? "";
+    expect(text).not.toMatch(/\.pdf/i);
+    expect(text).not.toMatch(/Power BI/);
+    expect(text).not.toMatch(/export all/i);
+  });
+
   it("explains the filtered versus whole-session scope before export", async () => {
     renderSeeded(snapshotFor(SESSION_A, "READY"));
     await goToDataQualityReady();

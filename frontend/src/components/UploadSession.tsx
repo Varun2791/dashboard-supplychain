@@ -454,6 +454,12 @@ export default function UploadSession({
 
       {session === null ? (
         <>
+          {/*
+           * Technical intake panel (Slice E): restrained 1px dashed edge,
+           * compact padding, left-aligned spec copy. Drag/drop handlers,
+           * the native file input, and all validation/submit behavior are
+           * unchanged — only the container treatment is flattened.
+           */}
           <div
             data-testid="dropzone"
             onDragOver={(event) => {
@@ -469,11 +475,16 @@ export default function UploadSession({
             }}
             className={
               dragActive
-                ? "rounded-lg border-2 border-dashed border-primary bg-primary/5 p-6 text-center"
-                : "rounded-lg border-2 border-dashed border-border p-6 text-center"
+                ? "rounded-lg border border-dashed border-primary bg-primary/5 p-4"
+                : "rounded-lg border border-dashed border-border p-4"
             }
           >
-            <p className="text-sm">Drag and drop a .csv file here, or</p>
+            <p className="text-sm">
+              Drag and drop a .csv file here, or choose a file below.
+            </p>
+            <p className="font-analytical mt-1 text-[11px] text-muted-foreground">
+              CSV only · 250 MB maximum · processed on this machine
+            </p>
             <div className="mt-2 flex flex-col items-start gap-2">
               <label
                 htmlFor="csv-file-input"

@@ -264,7 +264,7 @@ export default function ExportSection() {
         processing stays local; exports are sanitized and carry provenance
         metadata.
       </p>
-      <details className="mt-2 rounded-lg border px-3 py-2 text-sm">
+      <details className="mt-2 border-t border-border pt-2 text-sm">
         <summary className="cursor-pointer font-medium">
           About filtered populations
         </summary>
@@ -275,7 +275,13 @@ export default function ExportSection() {
           order-level category semantics.
         </p>
       </details>
-      <div className="mt-3 flex flex-col gap-3">
+      {/*
+       * Compact evidence-extraction register (Slice E): one shared frame
+       * with divider rows instead of one bordered card per artifact.
+       * Artifact order, copy, buttons, statuses, and download behavior
+       * are unchanged — only the container hierarchy is flattened.
+       */}
+      <div className="strip-frame mt-3 grid grid-cols-1 gap-px overflow-hidden rounded-lg border bg-border">
         {KIND_ORDER.map((kind) => {
           const meta = KIND_META[kind];
           const state = states[kind];
@@ -283,19 +289,22 @@ export default function ExportSection() {
           return (
             <div
               key={kind}
-              className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3"
+              className="flex min-w-0 flex-col gap-2 bg-card px-3 py-2.5"
             >
-              <div>
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                 <p className="text-sm font-medium">
                   {meta.title}{" "}
                   <span className="font-analytical text-[11px] font-normal text-muted-foreground">
                     {isCsv ? "CSV" : "Report"}
                   </span>
                 </p>
-                <p className="mt-0.5 text-sm text-muted-foreground">
-                  {meta.body}
+                <p className="font-analytical text-[11px] text-muted-foreground">
+                  {kind}
                 </p>
               </div>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                {meta.body}
+              </p>
               {state.phase === "creating" ? (
                 <p role="status" className="text-sm text-muted-foreground">
                   Building the {meta.title.toLowerCase()} export…
@@ -407,7 +416,7 @@ export default function ExportSection() {
                 </div>
               ) : null}
               {state.phase === "ready" && state.identity !== null ? (
-                <details className="rounded-lg border px-3 py-2 text-sm">
+                <details className="border-t border-border pt-2 text-sm">
                   <summary className="cursor-pointer font-medium">
                     Provenance and integrity
                   </summary>
