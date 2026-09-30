@@ -712,7 +712,12 @@ export default function UploadSession({
                 <p>Nothing required the governed trim, so no values changed.</p>
               )}
               {cleaningFindings.length > 0 ? (
-                <ul className="list-disc pl-5">
+                <ul
+                  className="list-disc break-words pl-5"
+                  /* Rule/field identifiers are unbreakable runs; they wrap
+                     mid-string (never truncate) so narrow viewports keep the
+                     page at zero horizontal overflow. */
+                >
                   {cleaningFindings.map((step) => (
                     <li key={`${step.ruleId}:${step.field}`}>
                       {step.ruleId}

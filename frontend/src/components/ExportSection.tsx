@@ -420,7 +420,13 @@ export default function ExportSection() {
                   <summary className="cursor-pointer font-medium">
                     Provenance and integrity
                   </summary>
-                  <ul className="mt-1 list-disc pl-5 text-muted-foreground">
+                  {/*
+                   * Filenames and SHA-256 digests are unbreakable runs; they
+                   * wrap mid-string (never truncate) so narrow viewports keep
+                   * them inside the register — the same break-all treatment
+                   * the session file panel already uses for hashes.
+                   */}
+                  <ul className="mt-1 list-disc break-all pl-5 text-muted-foreground">
                     <li>Primary file: {state.identity.filename}</li>
                     <li>Primary size: {state.identity.bytes} bytes</li>
                     <li>Primary SHA-256: {state.identity.sha256}</li>

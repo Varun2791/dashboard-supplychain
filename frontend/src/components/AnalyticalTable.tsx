@@ -9,6 +9,14 @@ import type { ReactNode } from "react";
  * — views render their own thead/tbody. Numeric alignment is structural:
  * every migrated grouped table leads with its dimension label, so all
  * non-first columns right-align as mono/tabular numerics via CSS.
+ *
+ * The wrapper is positioned (Slice F root-cause fix): `overflow-x: auto`
+ * alone does not contain absolutely-positioned descendants (e.g. an
+ * `sr-only` accessible name inside a scrolled-out column), whose
+ * containing block would otherwise be the initial containing block and
+ * whose static position would extend the page's scrollable overflow.
+ * `relative` with no offsets changes no layout; it only keeps such
+ * descendants scrolling with their table inside this region.
  */
 export function AnalyticalTable({
   label,
@@ -18,7 +26,7 @@ export function AnalyticalTable({
   children: ReactNode;
 }) {
   return (
-    <div className="analytical-table overflow-x-auto rounded-lg border bg-card">
+    <div className="analytical-table relative overflow-x-auto rounded-lg border bg-card">
       <table aria-label={label} className="w-full text-sm">
         {children}
       </table>
@@ -34,7 +42,9 @@ export function AnalyticalTable({
  * tables keep this neutral wrapper and own their own cell alignment.
  * It owns no columns, sorting, or semantics either; it only guarantees
  * the table scrolls inside its owned region instead of overflowing the
- * page. Views render their own thead/tbody.
+ * page. Views render their own thead/tbody. Like AnalyticalTable above,
+ * the wrapper is positioned so absolutely-positioned descendants (such
+ * as `sr-only` names) stay contained in this region.
  */
 export function ScrollTable({
   label,
@@ -44,7 +54,7 @@ export function ScrollTable({
   children: ReactNode;
 }) {
   return (
-    <div className="overflow-x-auto rounded-lg border">
+    <div className="relative overflow-x-auto rounded-lg border">
       <table aria-label={label} className="w-full text-sm">
         {children}
       </table>
