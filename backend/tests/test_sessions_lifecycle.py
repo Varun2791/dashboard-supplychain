@@ -275,3 +275,18 @@ def test_manifest_model_rejects_personal_payload_shape() -> None:
         "kpiArtifact",
     }
     assert set(SessionManifest.model_fields) == allowed
+
+
+def test_upload_without_explicit_session_root_stays_in_tmp(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """17D-01 regression: a test taking only `client` must not touch prod scratch.
+
+    The autouse `_isolate_session_root` fixture (conftest.py) redirects the
+    session root to a per-test temp dir. Without it, this upload would land
+    in the developer's real `backend/.tmp/sessions` (the ~60-dir leak).
+    """
+    session_id = upload(client, COMPATIBLE_BYTES).json()["data"]["sessionId"]
+    paths = session_store.session_paths(settings.session_root, session_id)
+    assert paths.root.startswith(str(tmp_path))
+    assert os.path.isdir(paths.root)
