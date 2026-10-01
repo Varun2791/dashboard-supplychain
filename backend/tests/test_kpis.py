@@ -949,3 +949,203 @@ def test_small_fixture_headline_matches_hand_computation(
     for payload in entry.values():
         assert payload["status"] == "ok"
         assert payload["label"] == kpis.KPI_LABELS[payload["id"]]
+
+
+# ---------------------------------------------------------------------------
+# order_month grouping (C2 key-vector regression)
+# ---------------------------------------------------------------------------
+
+
+def test_month_key_format_zero_padded() -> None:
+    assert kpis._month_key(date(2026, 1, 5)) == "2026-01"
+    assert kpis._month_key(date(2025, 12, 31)) == "2025-12"
+    assert kpis._month_key(None) is None
+
+
+def test_group_keys_order_month_sorted_and_null_excluded() -> None:
+    tables = make_tables(
+        [
+            base_item(
+                "O3",
+                order_date=date(2021, 5, 2),
+                order_timestamp=datetime(2021, 5, 2, 9, 0, 0),
+            ),
+            base_item(
+                "O1",
+                order_date=date(2021, 3, 15),
+                order_timestamp=datetime(2021, 3, 15, 10, 0, 0),
+            ),
+            base_item("O2", order_date=None, order_timestamp=None),
+            base_item(
+                "O4",
+                order_date=date(2021, 3, 20),
+                order_timestamp=datetime(2021, 3, 20, 11, 0, 0),
+            ),
+        ],
+        [base_order("O1", "LATE", True, 5, 3)],
+    )
+    groups = kpis.group_keys(tables.items, "order_month")
+    assert list(groups) == ["2021-03", "2021-05"]
+    assert groups["2021-03"] == [1, 3]
+    assert groups["2021-05"] == [0]
+
+
+def test_group_keys_order_month_positional_not_label_based() -> None:
+    """Sparse index labels must not affect month membership or positions."""
+    tables = make_tables(
+        [
+            base_item(
+                "O1",
+                order_date=date(2021, 3, 5),
+                order_timestamp=datetime(2021, 3, 5, 9, 0, 0),
+            ),
+            base_item(
+                "O2",
+                order_date=date(2021, 4, 6),
+                order_timestamp=datetime(2021, 4, 6, 9, 0, 0),
+            ),
+            base_item(
+                "O3",
+                order_date=date(2021, 3, 7),
+                order_timestamp=datetime(2021, 3, 7, 9, 0, 0),
+            ),
+        ],
+        [base_order("O1", "LATE", True, 5, 3)],
+    )
+    sparse = tables.items.drop([1])
+    assert list(sparse.index) == [0, 2]
+    groups = kpis.group_keys(sparse, "order_month")
+    assert list(groups) == ["2021-03"]
+    assert groups["2021-03"] == [0, 1]
+    assert sparse.iloc[groups["2021-03"]]["order_id"].tolist() == ["O1", "O3"]
+
+
+def test_commercial_order_month_item_grain_and_reconciliation() -> None:
+    tables = make_tables(
+        [
+            base_item(
+                "O1",
+                order_date=date(2021, 3, 5),
+                order_timestamp=datetime(2021, 3, 5, 9, 0, 0),
+            ),
+            base_item(
+                "O1",
+                order_date=date(2021, 3, 6),
+                order_timestamp=datetime(2021, 3, 6, 9, 0, 0),
+            ),
+            base_item(
+                "O2",
+                order_date=date(2021, 4, 6),
+                order_timestamp=datetime(2021, 4, 6, 9, 0, 0),
+                gross_sales=Decimal("52.00"),
+                discount_amount=Decimal("2.00"),
+                net_sales=Decimal("50.00"),
+                profit_amount=Decimal("10.00"),
+            ),
+        ],
+        [
+            base_order("O1", "LATE", True, 5, 3, lines=2, units=4),
+            base_order(
+                "O2",
+                "EARLY",
+                False,
+                1,
+                4,
+                net=Decimal("50.00"),
+                profit=Decimal("10.00"),
+            ),
+        ],
+    )
+    groups = dict(kpis.compute_groups(tables, "order_month", kpis.NO_FILTERS, False))
+    assert set(groups) == {"2021-03", "2021-04"}
+    march = by_id(groups["2021-03"])
+    assert march["kpi.value.net"].value == "56.00"
+    assert march["kpi.value.net"].numerator == "56.00"
+    april = by_id(groups["2021-04"])
+    assert april["kpi.value.net"].value == "50.00"
+    head = by_id(kpis.compute_commercial(tables.items, tables.orders, kpis.NO_FILTERS))
+    grouped_total = sum(
+        Decimal(by_id(results)["kpi.value.net"].value) for results in groups.values()
+    )
+    assert grouped_total == Decimal(head["kpi.value.net"].value) == Decimal("106.00")
+
+
+def test_delivery_order_month_order_grain() -> None:
+    tables = make_tables(
+        [base_item("O1"), base_item("O2")],
+        [
+            base_order(
+                "O1",
+                "LATE",
+                True,
+                5,
+                3,
+                order_timestamp=datetime(2021, 3, 10, 9, 0, 0),
+            ),
+            base_order(
+                "O2",
+                "EARLY",
+                False,
+                1,
+                4,
+                order_timestamp=datetime(2021, 6, 11, 9, 0, 0),
+            ),
+        ],
+    )
+    groups = dict(kpis.compute_groups(tables, "order_month", kpis.NO_FILTERS, True))
+    assert set(groups) == {"2021-03", "2021-06"}
+    assert by_id(groups["2021-03"])["kpi.ship.late_count"].value == 1
+    assert by_id(groups["2021-06"])["kpi.ship.early_count"].value == 1
+
+
+def test_order_month_grouping_under_active_filter() -> None:
+    tables = make_tables(
+        [
+            base_item(
+                "O1",
+                order_date=date(2021, 3, 5),
+                order_timestamp=datetime(2021, 3, 5, 9, 0, 0),
+                destination_region="R1",
+            ),
+            base_item(
+                "O2",
+                order_date=date(2021, 3, 7),
+                order_timestamp=datetime(2021, 3, 7, 9, 0, 0),
+                destination_region="R2",
+            ),
+            base_item(
+                "O3",
+                order_date=date(2021, 4, 9),
+                order_timestamp=datetime(2021, 4, 9, 9, 0, 0),
+                destination_region="R1",
+            ),
+        ],
+        [
+            base_order("O1", "LATE", True, 5, 3, destination_region="R1"),
+            base_order("O2", "LATE", True, 5, 3, destination_region="R2"),
+            base_order("O3", "EARLY", False, 1, 4, destination_region="R1"),
+        ],
+    )
+    groups = dict(
+        kpis.compute_groups(tables, "order_month", kpis.KpiFilters(region="R1"), False)
+    )
+    assert set(groups) == {"2021-03", "2021-04"}
+    assert by_id(groups["2021-03"])["kpi.value.net"].value == "28.00"
+    assert by_id(groups["2021-04"])["kpi.value.net"].value == "28.00"
+
+
+def test_commercial_order_month_group_structure() -> None:
+    tables = make_tables(
+        [
+            base_item(
+                "O1",
+                order_date=date(2021, 3, 5),
+                order_timestamp=datetime(2021, 3, 5, 9, 0, 0),
+            ),
+        ],
+        [base_order("O1", "LATE", True, 5, 3)],
+    )
+    grouped = kpis.compute_groups(tables, "order_month", kpis.NO_FILTERS, False)
+    assert [(key, [r.id for r in results]) for key, results in grouped] == [
+        ("2021-03", list(kpis.COMMERCIAL_KPI_IDS))
+    ]

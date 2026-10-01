@@ -526,12 +526,13 @@ def apply_filters(
     return items, orders
 
 
-def _group_key(frame: pd.DataFrame, by: str, index: int, row: pd.Series) -> str | None:
-    if by == "order_month":
-        day = frame["_order_date"].tolist()[index]
-        if day is None:
-            return None
-        return f"{day.year:04d}-{day.month:02d}"
+def _month_key(day: date | None) -> str | None:
+    if day is None:
+        return None
+    return f"{day.year:04d}-{day.month:02d}"
+
+
+def _group_key(row: pd.Series, by: str) -> str | None:
     cell = str(row[BY_COLUMN[by]])
     if cell == "" or cell == UNKNOWN_FLAGGED:
         # ADR-030: unknown enum values are counted and reported, but
@@ -543,9 +544,20 @@ def _group_key(frame: pd.DataFrame, by: str, index: int, row: pd.Series) -> str 
 def group_keys(frame: pd.DataFrame, by: str) -> dict[str, list[int]]:
     """Deterministic groupkey -> row positions (unknown/null excluded)."""
     groups: dict[str, list[int]] = {}
+    if by == "order_month":
+        # The date column is materialized once and iterated positionally.
+        # Positions are enumeration positions into the frame's row order,
+        # matching the `iloc` slices downstream; pandas index labels are
+        # never consulted, so dense and sparse labels behave identically.
+        for position, day in enumerate(frame["_order_date"].tolist()):
+            key = _month_key(day)
+            if key is None:
+                continue
+            groups.setdefault(key, []).append(position)
+        return {key: groups[key] for key in sorted(groups)}
     rows = list(frame.iterrows())
     for position, (_, row) in enumerate(rows):
-        key = _group_key(frame, by, position, row)
+        key = _group_key(row, by)
         if key is None:
             continue
         groups.setdefault(key, []).append(position)
