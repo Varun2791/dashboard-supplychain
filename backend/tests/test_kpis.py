@@ -1149,3 +1149,173 @@ def test_commercial_order_month_group_structure() -> None:
     assert [(key, [r.id for r in results]) for key, results in grouped] == [
         ("2021-03", list(kpis.COMMERCIAL_KPI_IDS))
     ]
+
+
+# ---------------------------------------------------------------------------
+# Non-month group-key parity (positional column materialization)
+# ---------------------------------------------------------------------------
+
+NON_MONTH_BY = [by for by in kpis.BY_COLUMN if by != "order_month"]
+
+
+def _raw_frame(column: str, values: list[object]) -> pd.DataFrame:
+    """Single-column object frame preserving None/blank/odd values exactly."""
+    return pd.DataFrame({column: pd.Series(values, dtype=object)})
+
+
+@pytest.mark.parametrize("by", NON_MONTH_BY)
+def test_group_keys_non_month_resolve_source_column(by: str) -> None:
+    """Every migrated public `by` groups by its governed source column."""
+    column = kpis.BY_COLUMN[by]
+    frame = pd.DataFrame({column: pd.Series(["B1", "A1", "B1"], dtype=object)})
+    groups = kpis.group_keys(frame, by)
+    assert list(groups) == ["A1", "B1"]
+    assert groups == {"A1": [1], "B1": [0, 2]}
+
+
+@pytest.mark.parametrize(
+    ("by", "values", "expected"),
+    [
+        (
+            "customer_segment",
+            ["CONSUMER", "CORPORATE", "CONSUMER", "HOME_OFFICE"],
+            {"CONSUMER": [0, 2], "CORPORATE": [1], "HOME_OFFICE": [3]},
+        ),
+        (
+            "product_name",
+            ["W", "a", "W", "10"],
+            {"10": [3], "W": [0, 2], "a": [1]},
+        ),
+        (
+            "destination_region",
+            ["R2", "R1", "R2", "R10"],
+            {"R1": [1], "R10": [3], "R2": [0, 2]},
+        ),
+        (
+            "shipping_mode",
+            ["STANDARD_CLASS", "SAME_DAY", "STANDARD_CLASS"],
+            {"SAME_DAY": [1], "STANDARD_CLASS": [0, 2]},
+        ),
+    ],
+)
+def test_group_keys_non_month_key_semantics_and_sort(
+    by: str, values: list[object], expected: dict[str, list[int]]
+) -> None:
+    """Ordinary keys, lexicographic sort, enumeration membership positions."""
+    groups = kpis.group_keys(_raw_frame(kpis.BY_COLUMN[by], values), by)
+    assert groups == expected
+    assert list(groups) == sorted(expected)
+
+
+@pytest.mark.parametrize("by", NON_MONTH_BY)
+def test_group_keys_non_month_blank_and_unknown_excluded(by: str) -> None:
+    """Blank excluded; UNKNOWN_FLAGGED excluded per ADR-030; rest intact."""
+    groups = kpis.group_keys(
+        _raw_frame(kpis.BY_COLUMN[by], ["b", "", kpis.UNKNOWN_FLAGGED, "a", "b"]),
+        by,
+    )
+    assert groups == {"a": [3], "b": [0, 4]}
+
+
+def test_group_keys_non_month_none_renders_none_group() -> None:
+    """None stringifies to a "None" group (pre-fix parity, not exclusion)."""
+    groups = kpis.group_keys(
+        _raw_frame("customer_segment", ["CONSUMER", None, "CONSUMER"]),
+        "customer_segment",
+    )
+    assert groups == {"CONSUMER": [0, 2], "None": [1]}
+
+
+def test_group_keys_non_month_positional_not_label_based() -> None:
+    """Sparse index labels must not affect membership or iloc selection."""
+    frame = _raw_frame("department_name", ["D1", "D2", "D1", "D2", "D1", "D2"])
+    sparse = frame.drop([1, 3, 5])
+    assert list(sparse.index) == [0, 2, 4]
+    groups = kpis.group_keys(sparse, "department_name")
+    assert groups == {"D1": [0, 1, 2]}
+    assert sparse.iloc[groups["D1"]]["department_name"].tolist() == ["D1"] * 3
+
+
+def test_commercial_non_month_item_grain_and_reconciliation() -> None:
+    """Item-grain grouping with grouped-to-headline net reconciliation."""
+    tables = make_tables(
+        [
+            base_item("O1", customer_segment="CONSUMER"),
+            base_item(
+                "O2",
+                customer_segment="CORPORATE",
+                gross_sales=Decimal("52.00"),
+                discount_amount=Decimal("2.00"),
+                net_sales=Decimal("50.00"),
+                profit_amount=Decimal("10.00"),
+            ),
+            base_item("O3", customer_segment="CONSUMER"),
+        ],
+        [
+            base_order("O1", "LATE", True, 5, 3),
+            base_order(
+                "O2",
+                "EARLY",
+                False,
+                1,
+                4,
+                net=Decimal("50.00"),
+                profit=Decimal("10.00"),
+            ),
+            base_order("O3", "LATE", True, 5, 3),
+        ],
+    )
+    groups = dict(
+        kpis.compute_groups(tables, "customer_segment", kpis.NO_FILTERS, False)
+    )
+    assert set(groups) == {"CONSUMER", "CORPORATE"}
+    assert [(key, [r.id for r in results]) for key, results in groups.items()] == [
+        ("CONSUMER", list(kpis.COMMERCIAL_KPI_IDS)),
+        ("CORPORATE", list(kpis.COMMERCIAL_KPI_IDS)),
+    ]
+    assert by_id(groups["CONSUMER"])["kpi.value.net"].value == "56.00"
+    assert by_id(groups["CORPORATE"])["kpi.value.net"].value == "50.00"
+    head = by_id(kpis.compute_commercial(tables.items, tables.orders, kpis.NO_FILTERS))
+    grouped_total = sum(
+        Decimal(by_id(results)["kpi.value.net"].value) for results in groups.values()
+    )
+    assert grouped_total == Decimal(head["kpi.value.net"].value) == Decimal("106.00")
+
+
+def test_delivery_non_month_order_grain() -> None:
+    """Order-grain grouping stays on the orders frame with order formulas."""
+    tables = make_tables(
+        [base_item("O1"), base_item("O2")],
+        [
+            base_order("O1", "LATE", True, 5, 3, shipping_mode="SAME_DAY"),
+            base_order("O2", "EARLY", False, 1, 4, shipping_mode="STANDARD_CLASS"),
+        ],
+    )
+    groups = dict(kpis.compute_groups(tables, "shipping_mode", kpis.NO_FILTERS, True))
+    assert set(groups) == {"SAME_DAY", "STANDARD_CLASS"}
+    assert by_id(groups["SAME_DAY"])["kpi.ship.late_count"].value == 1
+    assert by_id(groups["STANDARD_CLASS"])["kpi.ship.early_count"].value == 1
+
+
+def test_non_month_grouping_under_active_filter() -> None:
+    """Filtered frames group enumeration positions selecting intended rows."""
+    tables = make_tables(
+        [
+            base_item("O1", destination_region="R1", customer_segment="CONSUMER"),
+            base_item("O2", destination_region="R2", customer_segment="CONSUMER"),
+            base_item("O3", destination_region="R1", customer_segment="CORPORATE"),
+        ],
+        [
+            base_order("O1", "LATE", True, 5, 3, destination_region="R1"),
+            base_order("O2", "LATE", True, 5, 3, destination_region="R2"),
+            base_order("O3", "EARLY", False, 1, 4, destination_region="R1"),
+        ],
+    )
+    groups = dict(
+        kpis.compute_groups(
+            tables, "customer_segment", kpis.KpiFilters(region="R1"), False
+        )
+    )
+    assert set(groups) == {"CONSUMER", "CORPORATE"}
+    assert by_id(groups["CONSUMER"])["kpi.value.net"].value == "28.00"
+    assert by_id(groups["CORPORATE"])["kpi.value.net"].value == "28.00"

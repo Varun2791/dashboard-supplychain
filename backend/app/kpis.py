@@ -532,15 +532,6 @@ def _month_key(day: date | None) -> str | None:
     return f"{day.year:04d}-{day.month:02d}"
 
 
-def _group_key(row: pd.Series, by: str) -> str | None:
-    cell = str(row[BY_COLUMN[by]])
-    if cell == "" or cell == UNKNOWN_FLAGGED:
-        # ADR-030: unknown enum values are counted and reported, but
-        # excluded from split KPIs.
-        return None
-    return cell
-
-
 def group_keys(frame: pd.DataFrame, by: str) -> dict[str, list[int]]:
     """Deterministic groupkey -> row positions (unknown/null excluded)."""
     groups: dict[str, list[int]] = {}
@@ -555,12 +546,19 @@ def group_keys(frame: pd.DataFrame, by: str) -> dict[str, list[int]]:
                 continue
             groups.setdefault(key, []).append(position)
         return {key: groups[key] for key in sorted(groups)}
-    rows = list(frame.iterrows())
-    for position, (_, row) in enumerate(rows):
-        key = _group_key(row, by)
-        if key is None:
+    # Non-month groupings use the same positional contract: the grouping
+    # column is materialized once and iterated by enumeration position
+    # (matching the `iloc` slices downstream; index labels never
+    # consulted). The key/exclusion semantics are exactly the governed
+    # ones — `str()` of the column value, with blank and UNKNOWN_FLAGGED
+    # excluded from split KPIs (ADR-030) — without per-row Series
+    # construction.
+    column = BY_COLUMN[by]
+    for position, value in enumerate(frame[column].tolist()):
+        cell = str(value)
+        if cell == "" or cell == UNKNOWN_FLAGGED:
             continue
-        groups.setdefault(key, []).append(position)
+        groups.setdefault(cell, []).append(position)
     return {key: groups[key] for key in sorted(groups)}
 
 
