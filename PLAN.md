@@ -587,7 +587,7 @@ Suggested commit: `feat(export): add sanitized data and quality-report exports`
 
 ## Phase 17 — Hardening, performance, and accessibility
 
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
 ### Objective
 
@@ -595,21 +595,21 @@ Make V1 reliable on the full reference file and safe against malformed inputs.
 
 ### Tasks
 
-- [ ] Benchmark upload, parsing, profiling, canonicalization, and KPI latency.
-- [ ] Measure peak memory on the 95.9 MB reference CSV.
-- [ ] Optimize only measured bottlenecks.
-- [ ] Test concurrent or repeated local sessions as supported.
-- [ ] Test cleanup after success, failure, reset, and process restart.
-- [ ] Run dependency and input-security review.
-- [ ] Run keyboard, contrast, focus, labeling, and screen-reader checks.
-- [ ] Run complete unit, integration, reference, and frontend suites.
+- [x] Benchmark upload, parsing, profiling, canonicalization, and KPI latency. — 17A measured medians on DataCo, synthetic 180k, and synthetic 500k tiers (ADR-042 harness, `.tmp/benchmarks/`, gitignored).
+- [x] Measure peak memory on the 95.9 MB reference CSV. — Sampled process high-water ~0.83 GB pre-optimization; live-server and 500k ru_maxrss comparisons showed no material regression after 17C.
+- [x] Optimize only measured bottlenecks. — 17C `build_orders` materialization fix only: DataCo build_orders median 11.01 s → 1.77 s, canonicalization 20.40 s → 10.74 s, live READY ~33.3 s → ~24.7 s, all six canonical CSVs byte-identical under controlled session identity.
+- [x] Test concurrent or repeated local sessions as supported. — 17D: 10 sequential success/delete cycles, 4 concurrent sessions, same-session races, replacement isolation; no production defect found.
+- [x] Test cleanup after success, failure, reset, and process restart. — 17D: terminal-failure raw removal, idempotent DELETE, restart sweep + stage recovery, TTL expiry, export cleanup; test-only scratch-isolation fix (per-test session roots).
+- [x] Run dependency and input-security review. — 17E: 30-threat model, 73-probe battery, no production defect; 2 regression tests; npm audit 0 vulnerabilities; backend `uv audit` triaged (no V1 remediation required under loopback use).
+- [x] Run keyboard, contrast, focus, labeling, and screen-reader checks. — 17F: rendered Playwright audit at 1440/768/375/320/200%-equivalent; 5 demonstrated defects fixed (hidden-panel focus leak, unnamed chart application stops, keyboard-inaccessible table scroll, ambiguous Details names, Report-Report copy).
+- [x] Run complete unit, integration, reference, and frontend suites. — Clean-worktree `make check` green (frontend 233, backend 412 passed + 1 env-gated skip); DataCo reference controls green; measured resource envelope documented in `docs/architecture.md` §3.
 
 ### Exit criteria
 
-- Resource limits and expected processing times are documented.
-- No critical security or accessibility finding remains.
-- Full reference processing completes within the agreed local budget.
-- All checks pass from a clean checkout.
+- Resource limits and expected processing times are documented. — Satisfied: `docs/architecture.md` §3 carries measured medians, single-run sanity values, and explicit non-guarantee boundaries.
+- No critical security or accessibility finding remains. — Satisfied: 17E found no production security defect; 17F fixed all 5 demonstrated accessibility defects with regression tests.
+- Full reference processing completes within the agreed local budget. — Satisfied: unmodified DataCo CSV reaches READY with all `AGENTS.md` controls green and 0 blocking DQ issues.
+- All checks pass from a clean checkout. — Satisfied: verified in an isolated Git worktree at the Phase 17 tip with dependencies installed from lockfiles only.
 
 Suggested commit: `test: harden full-file processing and accessibility`
 

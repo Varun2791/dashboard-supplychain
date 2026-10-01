@@ -92,3 +92,10 @@ UI states per view: empty (no session), loading (session not READY, stage shown)
 - Customer analytics use only the sanitized customer ID, segment, and approved coarse customer-side geography (ADR-005, ADR-016; see `docs/canonical-schema.md`).
 - Logs contain technical metadata, counts, rule IDs, and error codes only — never row contents, cell values, or personal fields.
 - Raw uploads, derived files, and exports live under session-scoped temp storage, are git-ignored, and are removed on reset, expiry, restart sweep, or terminal failure (leaving only privacy-safe error metadata).
+
+## 8. Release limitations (material V1 boundaries)
+
+- **Data/model:** DataCo-compatible schema only (ADR-001); the reference file shows synthetic/demo characteristics and supports no real-company inference (ADR-021); currency unspecified (ADR-010); recorded values are not recognized revenue (ADR-009); shipment adherence is not customer on-time delivery (ADR-011); unsupported KPI families stay unsupported (ADR-019); no forecasting/ML, no causal claims (ADR-018).
+- **Deployment/security:** local-first single-user on loopback (`--host 127.0.0.1`, no CORS middleware, no outbound upload transmission); no auth/tenancy; public arbitrary-upload hosting is outside V1. Dependency posture at release: frontend production `npm audit` 0 vulnerabilities; backend `uv audit` reported 16 advisories triaged as not requiring V1 remediation under loopback use, with residual uncertainty on four summary-less Starlette entries — known-advisory scans, not proof of absence.
+- **Performance:** measured envelope in `docs/architecture.md` §3; the 250 MB cap is an acceptance limit, not a comfort guarantee; the 500k probe is a scaling probe, not a support claim.
+- **Accessibility:** audited against applicable WCAG 2.2 AA criteria on the rendered app (1440/768/375/320/200%-equivalent, keyboard, contrast, tables, charts); semantic screen-reader-oriented audit only (no VoiceOver/NVDA/JAWS run); load-more exhaustion focus behavior not directly exercised; axe checks are supplementary evidence, not conformance proof.
