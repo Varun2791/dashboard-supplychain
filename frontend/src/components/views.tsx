@@ -46,11 +46,16 @@ export function ActiveView({
   return (
     <>
       {/* UploadSession is the single owner of the upload/session lifecycle.
-        It stays mounted for the life of the shell and is only visually
-        hidden (`hidden` removes it from layout, focus order, and the
-        accessibility tree) so navigation never cancels polling or wipes
-        the global snapshot with a fresh null state. */}
-      <div hidden={view !== "upload"} className="mx-auto w-full max-w-2xl">
+        It stays mounted for the life of the shell and is display-none
+        hidden off the Upload view (the `hidden` attribute alone is not
+        enough: inner `flex` display classes override the UA `[hidden]`
+        rule, which left an invisible focusable control in the tab order)
+        so navigation never cancels polling or wipes the global snapshot
+        with a fresh null state. */}
+      <div
+        hidden={view !== "upload"}
+        className={view !== "upload" ? "hidden" : "mx-auto w-full max-w-2xl"}
+      >
         <UploadSession onSessionChange={onSessionChange} />
       </div>
       {view === "data-quality" ? (

@@ -188,7 +188,11 @@ function NetValueChart({
     <figure className="mt-2">
       <div role="img" aria-label={`Recorded net order value by ${dimension}`}>
         <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={rows} margin={{ ...chartMargins, left: 48 }}>
+          <BarChart
+            accessibilityLayer={false}
+            data={rows}
+            margin={{ ...chartMargins, left: 48 }}
+          >
             <CartesianGrid {...chartGridProps} />
             <XAxis
               dataKey="group"

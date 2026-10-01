@@ -143,6 +143,41 @@ describe("slice C: thin table-shell contract", () => {
     expect(table).toBeInTheDocument();
     expect(withinScrollRegion(table as HTMLElement)).not.toBeNull();
   });
+
+  it("keeps table scroll groups keyboard-operable with group semantics", () => {
+    // Wide static tables overflow internally at narrow widths with no
+    // focusable descendants; the wrapper itself must be the keyboard
+    // path, named so the group purpose is announced. `group`, not
+    // `region`: tables share their section titles and duplicate region
+    // names fail landmark-uniqueness.
+    render(
+      <AnalyticalTable label="17F keyboard scroll probe">
+        <tbody>
+          <tr>
+            <td>static cell</td>
+          </tr>
+        </tbody>
+      </AnalyticalTable>,
+    );
+    const group = screen.getByRole("group", {
+      name: "17F keyboard scroll probe",
+    });
+    expect(group).toHaveAttribute("tabindex", "0");
+    expect(group.tagName).toBe("DIV");
+  });
+
+  it("disables the Recharts keyboard application layer on every chart", () => {
+    // Each chart surface rendered focusable with role=application and no
+    // name; every chart already pairs with an equivalent data table, so
+    // the named figure plus table carry the semantics instead.
+    for (const view of [
+      "src/components/OverviewView.tsx",
+      "src/components/DeliveryView.tsx",
+      "src/components/CommercialView.tsx",
+    ]) {
+      expect(sourceOf(view)).toContain("accessibilityLayer={false}");
+    }
+  });
 });
 
 function withinScrollRegion(element: HTMLElement): HTMLElement | null {

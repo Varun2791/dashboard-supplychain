@@ -797,4 +797,20 @@ describe("Phase-10 session lifetime across navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Overview" }));
     expect(await screen.findAllByText("2,500.00")).not.toHaveLength(0);
   });
+
+  it("removes the upload panel from layout, focus, and semantics off the Upload view", () => {
+    render(<App />);
+    // Upload view first: the native file control is visible and labelled.
+    expect(screen.getByTestId("file-input")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Delivery" }));
+    expect(
+      screen.getByRole("heading", { name: "Delivery" }),
+    ).toBeInTheDocument();
+    // The session-owned panel stays mounted for polling but must not leak
+    // an invisible focusable control or duplicate headings elsewhere.
+    expect(screen.getByTestId("file-input")).not.toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: "Upload a supply-chain CSV" }),
+    ).not.toBeInTheDocument();
+  });
 });

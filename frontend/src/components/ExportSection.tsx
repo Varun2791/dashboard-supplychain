@@ -294,9 +294,11 @@ export default function ExportSection() {
               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                 <p className="text-sm font-medium">
                   {meta.title}{" "}
-                  <span className="font-analytical text-[11px] font-normal text-muted-foreground">
-                    {isCsv ? "CSV" : "Report"}
-                  </span>
+                  {isCsv ? (
+                    <span className="font-analytical text-[11px] font-normal text-muted-foreground">
+                      CSV
+                    </span>
+                  ) : null}
                 </p>
                 <p className="font-analytical text-[11px] text-muted-foreground">
                   {kind}

@@ -17,6 +17,13 @@ import type { ReactNode } from "react";
  * whose static position would extend the page's scrollable overflow.
  * `relative` with no offsets changes no layout; it only keeps such
  * descendants scrolling with their table inside this region.
+ *
+ * The wrapper is keyboard-focusable (`tabIndex={0}` with group semantics):
+ * wide static tables overflow internally at narrow widths with no focusable
+ * descendants, so without a focusable region keyboard users could never
+ * scroll them. `group` (not `region`) is deliberate: several tables share
+ * their section titles, and duplicate region names fail landmark-uniqueness;
+ * the label doubles as the group name.
  */
 export function AnalyticalTable({
   label,
@@ -26,7 +33,12 @@ export function AnalyticalTable({
   children: ReactNode;
 }) {
   return (
-    <div className="analytical-table relative overflow-x-auto rounded-lg border bg-card">
+    <div
+      className="analytical-table relative overflow-x-auto rounded-lg border bg-card"
+      tabIndex={0}
+      role="group"
+      aria-label={label}
+    >
       <table aria-label={label} className="w-full text-sm">
         {children}
       </table>
@@ -44,7 +56,9 @@ export function AnalyticalTable({
  * the table scrolls inside its owned region instead of overflowing the
  * page. Views render their own thead/tbody. Like AnalyticalTable above,
  * the wrapper is positioned so absolutely-positioned descendants (such
- * as `sr-only` names) stay contained in this region.
+ * as `sr-only` names) stay contained in this region, and it is
+ * keyboard-focusable with group semantics for the same narrow-viewport
+ * scrolling reason (see AnalyticalTable for the role choice).
  */
 export function ScrollTable({
   label,
@@ -54,7 +68,12 @@ export function ScrollTable({
   children: ReactNode;
 }) {
   return (
-    <div className="relative overflow-x-auto rounded-lg border">
+    <div
+      className="relative overflow-x-auto rounded-lg border"
+      tabIndex={0}
+      role="group"
+      aria-label={label}
+    >
       <table aria-label={label} className="w-full text-sm">
         {children}
       </table>

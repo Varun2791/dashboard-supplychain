@@ -131,7 +131,11 @@ function TrendChart({ trend }: { trend: KpiCommercialData }) {
             aria-label={`Monthly recorded net order value and profit across ${months} months`}
           >
             <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={rows} margin={{ ...chartMargins, left: 48 }}>
+              <LineChart
+                accessibilityLayer={false}
+                data={rows}
+                margin={{ ...chartMargins, left: 48 }}
+              >
                 <CartesianGrid {...chartGridProps} />
                 <XAxis
                   dataKey="month"
@@ -257,7 +261,11 @@ function OutcomeDistribution({
             aria-label="Late, early, and exactly on-schedule order counts"
           >
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={rows} margin={{ ...chartMargins, left: 48 }}>
+              <BarChart
+                accessibilityLayer={false}
+                data={rows}
+                margin={{ ...chartMargins, left: 48 }}
+              >
                 <CartesianGrid {...chartGridProps} />
                 <XAxis
                   dataKey="outcome"

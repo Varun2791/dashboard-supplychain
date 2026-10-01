@@ -716,7 +716,12 @@ function OrderDrilldown({
                       </td>
                       <td className="px-3 py-2">
                         <details>
-                          <summary className="cursor-pointer">Details</summary>
+                          <summary className="cursor-pointer">
+                            Details{" "}
+                            <span className="sr-only">
+                              for order {row.order_id}
+                            </span>
+                          </summary>
                           <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
                             <dt className="text-muted-foreground">Segment</dt>
                             <dd>{row.customer_segment ?? "—"}</dd>

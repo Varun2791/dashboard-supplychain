@@ -842,4 +842,11 @@ describe("Phase-16B export experience", () => {
     const results = await axe(document.body);
     expect(results.violations).toEqual([]);
   });
+
+  it("never renders a doubled report label in the export register", async () => {
+    renderSeeded(snapshotFor(SESSION_A, "READY"));
+    await goToDataQualityReady();
+    const text = document.body.textContent ?? "";
+    expect(text).not.toMatch(/report\s+report/i);
+  });
 });

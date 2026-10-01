@@ -702,4 +702,18 @@ describe("Phase-15B sanitized order drilldown", () => {
     expect(section).not.toBeNull();
     expect(await axe(section as HTMLElement)).toHaveNoViolations();
   });
+
+  it("names each row-details disclosure with its order", async () => {
+    renderSeeded(snapshotFor(SESSION_A, "READY"));
+    goToDiagnostics();
+    await screen.findByText("O-11");
+    // Repeated "Details" controls are ambiguous without row context; the
+    // visually-hidden order suffix disambiguates the accessible name.
+    // (jsdom exposes no button role for summary, so assert the name text.)
+    const summary = screen
+      .getByText("O-11")
+      .closest("tr")
+      ?.querySelector("summary");
+    expect(summary?.textContent).toMatch(/Details\s+for order O-11/);
+  });
 });

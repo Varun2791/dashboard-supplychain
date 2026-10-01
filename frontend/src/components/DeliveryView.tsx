@@ -215,7 +215,11 @@ function LateRateChart({
         aria-label={`Late-shipment rate in percent by ${dimension}`}
       >
         <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={rows} margin={{ ...chartMargins, left: 32 }}>
+          <BarChart
+            accessibilityLayer={false}
+            data={rows}
+            margin={{ ...chartMargins, left: 32 }}
+          >
             <CartesianGrid {...chartGridProps} />
             <XAxis
               dataKey="group"
