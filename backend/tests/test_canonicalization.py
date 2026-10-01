@@ -17,9 +17,11 @@ into production (assertions here recompute expectations from the fixture).
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import uuid
 from datetime import datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
@@ -30,6 +32,8 @@ import app.sessions as session_store
 from app import canonicalization as canonical_service
 from app.canonicalization import (
     ORDER_STATUS_MAP,
+    _single_or_none_values,
+    build_orders,
     dim_conflicts,
     duplicate_item_rows,
     map_enum,
@@ -1084,3 +1088,185 @@ def test_worker_exception_fails_terminally_and_releases_guard(
     assert not canonical_service._CANONICALIZATION_IN_PROGRESS
     again = canonical_service.run_canonicalization(session_id)
     assert again is not None and again.state == "FAILED"
+
+
+def _order_items_frame(rows: list[dict[str, object]]) -> pd.DataFrame:
+    """Minimal items frame carrying every column build_orders reads."""
+    base: dict[str, object] = {
+        "order_id": None,
+        "customer_id": None,
+        "order_timestamp": None,
+        "order_status": None,
+        "shipping_mode": None,
+        "customer_segment": None,
+        "destination_country": None,
+        "destination_region": None,
+        "destination_market": None,
+        "department_name": None,
+        "category_name": None,
+        "product_name": None,
+        "scheduled_shipping_days": None,
+        "actual_shipping_days": None,
+        "shipment_outcome": None,
+        "is_late": None,
+        "quantity_units": None,
+        "gross_sales": None,
+        "discount_amount": None,
+        "net_sales": None,
+        "profit_amount": None,
+    }
+    numbered = [
+        {**base, **row, "source_row_number": position}
+        for position, row in enumerate(rows, start=1)
+    ]
+    return pd.DataFrame(numbered)
+
+
+def test_single_or_none_values_contract() -> None:
+    """Lock the invariant-resolution contract (behavior, not mechanics)."""
+    assert _single_or_none_values([]) is None
+    assert _single_or_none_values([None, None]) is None
+    assert _single_or_none_values(["COMPLETE"]) == "COMPLETE"
+    assert _single_or_none_values(["X", "X", "X"]) == "X"
+    assert _single_or_none_values([None, "COMPLETE"]) == "COMPLETE"
+    assert _single_or_none_values(["COMPLETE", None, "COMPLETE"]) == "COMPLETE"
+    assert _single_or_none_values(["A", "B"]) is None
+    assert _single_or_none_values([None, "A", "B", None]) is None
+    assert _single_or_none_values([Decimal("10.50"), Decimal("10.50")]) == Decimal(
+        "10.50"
+    )
+    assert _single_or_none_values([Decimal("-3.25")]) == Decimal("-3.25")
+    assert _single_or_none_values([Decimal("1"), Decimal("2")]) is None
+    moment = datetime(2021, 3, 15, 10, 0, 0)
+    assert _single_or_none_values([moment, moment]) == moment
+    assert _single_or_none_values([moment, datetime(2021, 3, 16)]) is None
+    assert _single_or_none_values([True, True]) is True
+    assert _single_or_none_values([True, False]) is None
+    assert _single_or_none_values([None, True, None]) is True
+    only_nan = _single_or_none_values([float("nan")])
+    assert isinstance(only_nan, float) and math.isnan(only_nan)
+    assert _single_or_none_values([float("nan"), float("nan")]) is None
+
+
+def test_build_orders_single_row_order() -> None:
+    frame = _order_items_frame(
+        [
+            {
+                "order_id": "O-1",
+                "customer_id": "C-1",
+                "order_status": "COMPLETE",
+                "quantity_units": 2,
+                "gross_sales": Decimal("30.00"),
+                "discount_amount": Decimal("2.00"),
+                "net_sales": Decimal("28.00"),
+                "profit_amount": Decimal("6.40"),
+            }
+        ]
+    )
+    orders = build_orders(frame, "session-1")
+    assert list(orders["order_id"]) == ["O-1"]
+    row = orders.iloc[0]
+    assert row["customer_id"] == "C-1"
+    assert row["line_count"] == 1
+    assert row["total_units"] == 2
+    assert row["gross_value"] == Decimal("30.00")
+    assert row["net_value"] == Decimal("28.00")
+    assert row["profit_total"] == Decimal("6.40")
+
+
+def test_build_orders_multirow_invariant_sums_and_negative_profit() -> None:
+    frame = _order_items_frame(
+        [
+            {
+                "order_id": "O-9",
+                "shipping_mode": "STANDARD_CLASS",
+                "quantity_units": 1,
+                "net_sales": Decimal("10.10"),
+                "profit_amount": Decimal("-2.55"),
+            },
+            {
+                "order_id": "O-9",
+                "shipping_mode": "STANDARD_CLASS",
+                "quantity_units": 3,
+                "net_sales": Decimal("20.20"),
+                "profit_amount": Decimal("5.00"),
+            },
+        ]
+    )
+    orders = build_orders(frame, "session-1")
+    assert len(orders) == 1
+    row = orders.iloc[0]
+    assert row["shipping_mode"] == "STANDARD_CLASS"
+    assert row["line_count"] == 2
+    assert row["total_units"] == 4
+    assert row["net_value"] == Decimal("30.30")
+    assert row["profit_total"] == Decimal("2.45")
+
+
+def test_build_orders_null_heavy_and_conflicting_invariants() -> None:
+    frame = _order_items_frame(
+        [
+            {"order_id": "O-5", "customer_segment": None, "shipment_outcome": "LATE"},
+            {
+                "order_id": "O-5",
+                "customer_segment": "CONSUMER",
+                "shipment_outcome": "LATE",
+            },
+            {
+                "order_id": "O-6",
+                "shipping_mode": "STANDARD_CLASS",
+                "is_late": True,
+            },
+            {
+                "order_id": "O-6",
+                "shipping_mode": "SECOND_CLASS",
+                "is_late": True,
+            },
+        ]
+    )
+    orders = build_orders(frame, "session-1").set_index("order_id")
+    assert orders.loc["O-5", "customer_segment"] == "CONSUMER"
+    assert orders.loc["O-5", "shipment_outcome"] == "LATE"
+    assert orders.loc["O-6", "shipping_mode"] is None
+    assert orders.loc["O-6", "is_late"] is True
+
+
+def test_build_orders_output_is_deterministically_ordered() -> None:
+    frame = _order_items_frame(
+        [
+            {"order_id": "O-Z"},
+            {"order_id": "O-A"},
+            {"order_id": "O-M"},
+        ]
+    )
+    orders = build_orders(frame, "session-1")
+    assert list(orders["order_id"]) == ["O-A", "O-M", "O-Z"]
+
+
+def test_build_orders_cancelled_lines_aggregate_without_lateness() -> None:
+    frame = _order_items_frame(
+        [
+            {
+                "order_id": "O-C",
+                "shipment_outcome": "SHIPPING_CANCELED",
+                "is_late": None,
+                "quantity_units": 2,
+                "net_sales": Decimal("28.00"),
+            },
+            {
+                "order_id": "O-C",
+                "shipment_outcome": "SHIPPING_CANCELED",
+                "is_late": None,
+                "quantity_units": 1,
+                "net_sales": Decimal("14.00"),
+            },
+        ]
+    )
+    orders = build_orders(frame, "session-1")
+    assert len(orders) == 1
+    row = orders.iloc[0]
+    assert row["shipment_outcome"] == "SHIPPING_CANCELED"
+    assert row["is_late"] is None
+    assert row["line_count"] == 2
+    assert row["total_units"] == 3
+    assert row["net_value"] == Decimal("42.00")

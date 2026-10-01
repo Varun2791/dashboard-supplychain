@@ -488,7 +488,19 @@ def order_gate_conflicts(items: pd.DataFrame) -> dict[str, list[str]]:
 
 def _single_or_none(group: pd.DataFrame, field: str) -> object:
     """The invariant value of a field within a group, or None when absent."""
-    vals = [v for v in group[field].tolist() if v is not None]
+    return _single_or_none_values(group[field].tolist())
+
+
+def _single_or_none_values(values: list[object]) -> object:
+    """Pure-list invariant resolution: home of the _single_or_none contract.
+
+    All-null -> None; one/repeated non-null -> that value (null-tolerant);
+    conflicting non-nulls -> None. Only None is treated as absent (NaN/NaT
+    are values, exactly as group[field].tolist() yields them). Callers that
+    already hold materialized group values use this directly so the contract
+    lives in one place instead of being duplicated per call site.
+    """
+    vals = [v for v in values if v is not None]
     if not vals:
         return None
     first = vals[0]
@@ -509,40 +521,78 @@ def _int_sum(values: list[int | None]) -> int:
     return sum(v for v in values if v is not None)
 
 
+# Per-order fields read inside build_orders: the 15 invariant fields plus
+# the summed columns. Column lists are materialized ONCE from the sorted
+# frame; each order resolves from its positional index (public
+# GroupBy.indices: integer positions into `keyed`, group rows in frame
+# order, keys ascending under sort=True). This runs the identical per-order
+# algorithm over identical values while avoiding one Series construction
+# per field per order (~1M+ on the reference workload).
+_BUILD_ORDERS_INVARIANTS: tuple[str, ...] = (
+    "customer_id",
+    "order_timestamp",
+    "order_status",
+    "shipping_mode",
+    "customer_segment",
+    "destination_country",
+    "destination_region",
+    "destination_market",
+    "department_name",
+    "category_name",
+    "product_name",
+    "scheduled_shipping_days",
+    "actual_shipping_days",
+    "shipment_outcome",
+    "is_late",
+)
+
+
 def build_orders(items: pd.DataFrame, session_id: str) -> pd.DataFrame:
     """Aggregate orders from items exactly once (caller enforces the gate)."""
     keyed = items[items["order_id"].notna()].sort_values(
         ["order_id", "source_row_number"]
     )
+    grouped = keyed.groupby("order_id", sort=True)
+    needed = _BUILD_ORDERS_INVARIANTS + ("quantity_units",) + MONEY_FIELDS
+    columns = {field: keyed[field].tolist() for field in needed}
     rows: list[dict[str, object]] = []
-    for order_id, group in keyed.groupby("order_id", sort=True):
+    for order_id, positions in grouped.indices.items():
+        scoped = {field: [columns[field][i] for i in positions] for field in needed}
         rows.append(
             {
                 "order_id": str(order_id),
                 "session_id": session_id,
-                "customer_id": _single_or_none(group, "customer_id"),
-                "order_timestamp": _single_or_none(group, "order_timestamp"),
-                "order_status": _single_or_none(group, "order_status"),
-                "shipping_mode": _single_or_none(group, "shipping_mode"),
-                "customer_segment": _single_or_none(group, "customer_segment"),
-                "destination_country": _single_or_none(group, "destination_country"),
-                "destination_region": _single_or_none(group, "destination_region"),
-                "destination_market": _single_or_none(group, "destination_market"),
-                "department_name": _single_or_none(group, "department_name"),
-                "category_name": _single_or_none(group, "category_name"),
-                "product_name": _single_or_none(group, "product_name"),
-                "scheduled_shipping_days": _single_or_none(
-                    group, "scheduled_shipping_days"
+                "customer_id": _single_or_none_values(scoped["customer_id"]),
+                "order_timestamp": _single_or_none_values(scoped["order_timestamp"]),
+                "order_status": _single_or_none_values(scoped["order_status"]),
+                "shipping_mode": _single_or_none_values(scoped["shipping_mode"]),
+                "customer_segment": _single_or_none_values(scoped["customer_segment"]),
+                "destination_country": _single_or_none_values(
+                    scoped["destination_country"]
                 ),
-                "actual_shipping_days": _single_or_none(group, "actual_shipping_days"),
-                "shipment_outcome": _single_or_none(group, "shipment_outcome"),
-                "is_late": _single_or_none(group, "is_late"),
-                "line_count": int(len(group)),
-                "total_units": _int_sum(group["quantity_units"].tolist()),
-                "gross_value": _decimal_sum(group["gross_sales"].tolist()),
-                "discount_total": _decimal_sum(group["discount_amount"].tolist()),
-                "net_value": _decimal_sum(group["net_sales"].tolist()),
-                "profit_total": _decimal_sum(group["profit_amount"].tolist()),
+                "destination_region": _single_or_none_values(
+                    scoped["destination_region"]
+                ),
+                "destination_market": _single_or_none_values(
+                    scoped["destination_market"]
+                ),
+                "department_name": _single_or_none_values(scoped["department_name"]),
+                "category_name": _single_or_none_values(scoped["category_name"]),
+                "product_name": _single_or_none_values(scoped["product_name"]),
+                "scheduled_shipping_days": _single_or_none_values(
+                    scoped["scheduled_shipping_days"]
+                ),
+                "actual_shipping_days": _single_or_none_values(
+                    scoped["actual_shipping_days"]
+                ),
+                "shipment_outcome": _single_or_none_values(scoped["shipment_outcome"]),
+                "is_late": _single_or_none_values(scoped["is_late"]),
+                "line_count": int(len(positions)),
+                "total_units": _int_sum(scoped["quantity_units"]),
+                "gross_value": _decimal_sum(scoped["gross_sales"]),
+                "discount_total": _decimal_sum(scoped["discount_amount"]),
+                "net_value": _decimal_sum(scoped["net_sales"]),
+                "profit_total": _decimal_sum(scoped["profit_amount"]),
             }
         )
     frame = pd.DataFrame(rows, columns=list(ORDER_COLUMNS))
