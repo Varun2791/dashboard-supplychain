@@ -996,3 +996,61 @@ def test_cross_session_primary_equivalent(client: TestClient) -> None:
     two = client.get(f"/api/v1/sessions/{second_session}/exports/{second['exportId']}")
     assert one.content == two.content
     assert first["sha256"] == second["sha256"]
+
+
+def test_cross_session_export_fetch_is_not_found(client: TestClient) -> None:
+    """17E: export IDs are session-contained; session B cannot fetch A's export."""
+    session_a = ready_session(client)
+    session_b = ready_session(client)
+    export_id = post_export(client, session_a, "orders").json()["data"]["exportId"]
+    for url in (
+        f"/api/v1/sessions/{session_b}/exports/{export_id}",
+        f"/api/v1/sessions/{session_b}/exports/{export_id}/metadata",
+    ):
+        response = client.get(url)
+        assert response.status_code == 404, (url, response.text)
+        assert response.json()["error"]["code"] == "EXPORT_NOT_FOUND"
+
+
+def test_nonfinite_numerics_never_reach_kpi_json(client: TestClient) -> None:
+    """17E: NaN/Infinity sales are parse failures, never JSON non-finite output."""
+    hostile = (
+        HEADER
+        + "\n"
+        + "\n".join(
+            [
+                row(
+                    **{
+                        "Order Id": f"SEC-NF-{tag}",
+                        "Order Item Id": f"SEC-ITM-{tag}",
+                        "Customer Id": f"SYN-CUST-{tag}",
+                        "Product Card Id": f"PROD-{tag}",
+                        "Product Category Id": f"CAT-{tag}",
+                        "Sales": sales,
+                        "Order Item Total": sales,
+                        "Benefit per order": "1.00",
+                        "Category Name": "Alpha",
+                        "Product Name": f"Widget {tag}",
+                    }
+                )
+                for tag, sales in (
+                    ("N1", "NaN"),
+                    ("N2", "Infinity"),
+                    ("N3", "-Infinity"),
+                )
+            ]
+        )
+        + "\n"
+    ).encode()
+    session_id = upload_ok(client, hostile)
+    state = client.get(f"/api/v1/sessions/{session_id}/status").json()["data"]
+    assert state["state"] == "READY", state
+    for url in (
+        f"/api/v1/sessions/{session_id}/kpis/overview",
+        f"/api/v1/sessions/{session_id}/kpis/delivery",
+        f"/api/v1/sessions/{session_id}/kpis/commercial",
+    ):
+        response = client.get(url)
+        assert response.status_code == 200, (url, response.text)
+        assert "NaN" not in response.text
+        assert "Infinity" not in response.text
