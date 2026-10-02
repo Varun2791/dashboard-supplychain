@@ -1403,6 +1403,79 @@ Phase 17 must benchmark the pipeline and harden reliability, but no governed ben
 
 ---
 
+## ADR-043 — Session-scoped canonical KPI-table cache
+
+**Status:** Accepted
+**Date:** 2026-10-02
+
+### Context
+
+Every analytical serving request (`overview`, `commercial`, `delivery`,
+`filter-options`, `orders`) re-parses and re-materializes the governed
+canonical CSVs through `load_canonical_tables(...)`. For the reference
+DataCo session the retained `KpiTables` measure ~280.3 MB deep with
+process RSS rising 98.2 → 412.7 MB on load, and a maximum-size 250 MB
+upload extrapolates to ~700–750 MB retained. Repeated per-request parsing
+dominates multi-view serving latency, while an unbounded session cache
+would risk host memory exhaustion and eviction does not promptly return
+allocator/Arrow memory to the OS (RSS fell only to 331.3 MB after
+del+GC). A consolidated batch endpoint was rejected: it rewrites the
+API/frontend contract to save the same reload work a backend-only cache
+removes.
+
+### Decision
+
+- Add a process-local, session-scoped, capacity-one, lazy, read-only
+  cache of the existing `KpiTables` result (`items`, `orders`,
+  `product_ids`, `customer_ids`) in a new `app/kpi_cache.py` module
+  (no new dependency; pandas deep memory accounting only).
+- Key is `session_id`; at most one session has reachable cached tables.
+  Inserting a cacheable second session evicts the first. An oversized
+  session is served normally from a fresh load but is never retained,
+  and its load never evicts an already cached session.
+- Populate only on first qualifying analytical access inside
+  `_kpi_or_raise(...)` after the existing session-existence, READY,
+  artifact, and quality gates pass. Never populate during upload,
+  canonicalization, the ANALYZING pipeline (`ensure_kpis_analyzed`
+  keeps calling `load_canonical_tables` directly), READY transition,
+  or startup. No cache warming, no restoration from disk, no shutdown
+  persistence: restart empties the cache (performance-only effect).
+- Cached base frames are borrowed read-only with no copy-on-read; all
+  filtering/grouping already produces new frames or copies. Persisted
+  canonical artifacts stay authoritative; no correctness state exists
+  only in memory. Errors are never cached and no hit is served before
+  the gates pass.
+- Retention byte guard `kpi_cache_retain_mb = 400` (400 MiB =
+  419,430,400 bytes, env-overridable like `max_upload_mb`): measured
+  deep bytes of the loaded `KpiTables` (items + orders deep memory plus
+  retained id-list memory; never RSS) must fit to be retained. 400 MiB
+  comfortably retains the ~280.3 MB DataCo tables (~1.4x headroom)
+  while rejecting the ~700–750 MB max-upload extrapolation (~0.55x).
+  This is a retention limit, not an upload limit.
+- Governed `DELETE /api/v1/sessions/{id}` evicts the memory entry
+  before deleting the persisted tree, preserving idempotent semantics.
+- Exports keep their existing loading path (`build_csv_dataset` calls
+  `load_canonical_tables` directly; the export gate call bypasses the
+  cache) — no export cache integration in this decision.
+- No TTL: READY canonical artifacts are immutable. No lock/single-flight:
+  current execution is one worker with async routes and synchronous
+  pandas work in the event-loop request path, so analytical Python
+  bodies do not overlap. No multi-worker/shared-cache support is
+  claimed. If workers or thread offload are introduced, cache
+  synchronization must be revisited under a new decision.
+
+### Consequences
+
+- Repeated analytical requests for one READY session pay one canonical
+  load; capacity-one plus the byte guard bound reachable retained
+  memory to a single ≤400 MiB `KpiTables`.
+- Eviction bounds reachable objects only; RSS may stay elevated after
+  eviction and capacity planning must assume retained RSS.
+- A worst-case accepted upload near 250 MB is served uncached on every
+  analytical request (slower, correct) rather than retained.
+
+---
+
 ## Decision-change template
 
 Copy this section when proposing a new material decision:

@@ -686,6 +686,8 @@ async def session_cleaning_report(session_id: str) -> CleaningReportResponse:
 @router.delete("/sessions/{session_id}", response_model=SessionDeletedResponse)
 async def delete_session(session_id: str) -> SessionDeletedResponse:
     """Idempotent reset: delete the whole session tree, UUID-gated."""
+    from app import kpi_cache as serving_cache
+
     if not session_store.is_valid_session_id(session_id):
         raise IngestionError(
             SESSION_NOT_FOUND,
@@ -695,6 +697,9 @@ async def delete_session(session_id: str) -> SessionDeletedResponse:
             {},
         )
     paths = session_store.session_paths(settings.session_root, session_id)
+    # Evict memory first: a crash between operations must never leave a
+    # deleted-on-disk session servable solely from cache.
+    serving_cache.evict(session_id)
     session_store.remove_session_tree(paths)
     logger.info("session_deleted")
     return SessionDeletedResponse(
@@ -842,6 +847,8 @@ def _parse_kpi_filters(
 
 def _kpi_or_raise(
     session_id: str,
+    *,
+    use_cache: bool = True,
 ) -> tuple[SessionManifest, KpiArtifact, KpiTables]:
     """Return the stored KPI artifact plus parsed canonical tables.
 
@@ -849,7 +856,12 @@ def _kpi_or_raise(
     reached READY (including canonical-blocked sessions parked behind a
     governed gate) get the contract 409 NOT_READY; terminal sessions
     re-surface their stored error without leaking values.
+
+    The session-scoped canonical cache (ADR-043) is consulted only after
+    every gate passes, so a hit never bypasses session/READY validity;
+    export gating passes `use_cache=False` to keep exports uncached.
     """
+    from app import kpi_cache as serving_cache
     from app.kpis import load_canonical_tables
 
     manifest, paths = _resolve_session(session_id)
@@ -891,6 +903,10 @@ def _kpi_or_raise(
             session_state=manifest.state,
         )
     try:
+        if use_cache:
+            cached = serving_cache.get(session_id)
+            if cached is not None:
+                return manifest, artifact, cached
         tables = load_canonical_tables(paths)
     except OSError:  # pragma: no cover - written with the transition
         logger.warning("kpi_tables_unreadable")
@@ -903,6 +919,9 @@ def _kpi_or_raise(
             session_id=session_id,
             session_state=manifest.state,
         )
+    if use_cache:
+        # Oversized tables are served from this load but never retained.
+        serving_cache.put_if_cacheable(session_id, tables)
     return manifest, artifact, tables
 
 
@@ -1382,7 +1401,7 @@ async def session_create_export(session_id: str, body: ExportRequest) -> ExportR
             {"kind": body.kind},
             session_id=session_id,
         )
-    manifest, _, _ = _kpi_or_raise(session_id)
+    manifest, _, _ = _kpi_or_raise(session_id, use_cache=False)
     filters = export_service.parse_export_filters(
         body.kind, body.filters, session_id, manifest.state
     )
