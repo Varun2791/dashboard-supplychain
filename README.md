@@ -77,11 +77,27 @@ Prerequisites: Node 24 LTS (`nvm use` reads `.nvmrc`), npm, Python 3.12 (see `.p
 
 ```sh
 make install          # install frontend (npm ci) + backend (uv sync) dependencies
+```
+
+Reviewer / stable local preview (recommended — serves the production frontend build):
+
+```sh
+# Terminal 1: backend
+make dev-backend      # FastAPI on http://127.0.0.1:8000
+# Terminal 2: frontend
+make preview-frontend # builds the production frontend, then starts the Vite preview
+```
+
+Open the URL printed by Vite (normally http://localhost:4173), go to the Upload view, and upload a DataCo-compatible CSV (250 MB hard cap) — the dashboard enables stage by stage until the session is READY.
+
+Development (contributor use):
+
+```sh
 make dev-backend      # FastAPI on http://127.0.0.1:8000
 make dev-frontend     # Vite dev server
 ```
 
-Backend health check: `GET http://127.0.0.1:8000/api/v1/health`. Non-secret local overrides: copy `.env.example` to `.env` (gitignored). Open the app, go to the Upload view, and upload a DataCo-compatible CSV (250 MB hard cap) — the dashboard enables stage by stage until the session is READY.
+Backend health check: `GET http://127.0.0.1:8000/api/v1/health`. Non-secret local overrides: copy `.env.example` to `.env` (gitignored).
 
 Checks:
 

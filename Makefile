@@ -1,4 +1,4 @@
-.PHONY: install-frontend install-backend install dev-frontend dev-backend \
+.PHONY: install-frontend install-backend install dev-frontend dev-backend preview-frontend \
 	test-frontend test-backend lint typecheck format-check check benchmark-small
 
 install-frontend: ## Install frontend dependencies from the lockfile
@@ -14,6 +14,9 @@ dev-frontend: ## Start the Vite dev server
 
 dev-backend: ## Start the FastAPI dev server (http://127.0.0.1:8000)
 	cd backend && uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+
+preview-frontend: ## Build the production frontend and start the stable local preview
+	cd frontend && npm run build && npm run preview
 
 test-frontend: ## Run frontend tests (Vitest + Testing Library + axe)
 	cd frontend && npm test
