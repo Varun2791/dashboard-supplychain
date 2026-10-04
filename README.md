@@ -2,7 +2,7 @@
 
 Supply Chain Analytics Dashboard is a local-first analytics application that turns DataCo-compatible supply-chain CSV data into an auditable data-quality report and an interactive operational-performance dashboard.
 
-Local-first portfolio project · Python 3.12 / FastAPI / pandas · React / TypeScript / shadcn/ui / Recharts · V1 core engineering complete (Phases 0–17)
+Local-first portfolio project · Python 3.12 / FastAPI / pandas · React / TypeScript / shadcn/ui / Recharts · V1 core engineering complete
 
 ## Why this project
 
@@ -94,7 +94,7 @@ Cancellation and suspected fraud are reported separately: of 2,855 shipping-canc
 ## Verified engineering evidence
 
 - Official DataCo regression controls reproduced by automated tests (row/order/customer/product counts, commercial totals, shipment-outcome counts and rates within documented tolerances).
-- Clean-checkout acceptance: backend 412 tests passed (+1 environment-gated skip), frontend 233 tests passed; lint, type-check, format, and build green.
+- Clean-checkout acceptance: backend and frontend automated test suites pass in CI; lint, type-check, format, and build green.
 - Full-pipeline reference processing measured on the documented 8 GB arm64 reference machine: the 95.9 MB DataCo file reached READY in roughly the high-20-second range during final acceptance (methodology and single-run-vs-median qualifications in `docs/architecture.md` §3). The 250 MB upload cap is an acceptance limit, not a performance guarantee.
 - Malformed-input and dependency/security review with no remaining production defect; direct personal fields excluded from analytical surfaces, logs, and exports by construction.
 - Rendered interface audited against applicable WCAG 2.2 AA criteria; local-first processing throughout.
@@ -159,6 +159,6 @@ CI (`.github/workflows/ci.yml`) runs the same non-secret checks on every push an
 ## Documentation
 
 - `AGENTS.md` — permanent operating rules.
-- `PLAN.md` — phase-gated execution plan and phase record (Phases 0–17 complete; Phase 18 owns portfolio release).
+- `PLAN.md` — phase-gated execution plan and phase record.
 - `DECISIONS.md` — binding architectural and analytical decisions (ADR-001+).
 - `docs/product-spec.md`, `docs/architecture.md`, `docs/api-contract.md`, `docs/canonical-schema.md`, `docs/kpi-contracts.md`, `docs/data-quality-rules.md`, `docs/export-contract.md` — full V1 contracts.
