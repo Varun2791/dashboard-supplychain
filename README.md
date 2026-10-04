@@ -4,8 +4,6 @@ Supply Chain Analytics Dashboard is a local-first analytics application that tur
 
 Local-first portfolio project · Python 3.12 / FastAPI / pandas · React / TypeScript / shadcn/ui / Recharts · V1 core engineering complete (Phases 0–17)
 
-<!-- Portfolio screenshot to be added in Packaging 2 -->
-
 ## Why this project
 
 Operational CSV exports are rarely analysis-ready. A single supply-chain file can mix two different grains (individual order lines vs. whole orders), use inconsistent labels, contain invalid or missing values, carry privacy-sensitive columns that should never reach a dashboard, and use ambiguous delivery terminology where "late" is never precisely defined. Analyzing such a file at face value produces incorrect shipment-performance rates, double-counted orders, misleading commercial totals, and cleaning decisions nobody can trace.
@@ -31,10 +29,22 @@ Findings are associational and descriptive: diagnostics surface patterns for inv
 ## Dashboard views
 
 - **Executive Overview** — headline operational and commercial measures: recorded order value, recorded profit, margin, shipment-outcome rates, order and unit counts, plus trend and market/region context.
+
+  ![Executive Overview of the Supply Chain Analytics Dashboard over the DataCo reference file](docs/assets/screenshots/overview.png)
+
+  *Executive Overview over the full unfiltered DataCo reference file: headline results and the monthly recorded-value trend.*
 - **Delivery** — shipment adherence (late / early / exactly-on-schedule outcomes), actual vs. scheduled shipping days, and breakdowns by shipping mode, region, market, category, and time, with the eligible population stated.
+
+  ![Delivery schedule-adherence analysis by shipping mode in the Supply Chain Analytics Dashboard](docs/assets/screenshots/delivery.png)
+
+  *Delivery over the full DataCo scope: schedule-adherence outcomes with the per-shipping-mode breakdown.*
 - **Commercial** — recorded gross and net order value, discounts, recorded profit, amount-weighted margin and discount rates, units, and loss-making-order analysis across product and geography dimensions.
 - **Diagnostics** — shared filters, rankings by late-shipment and loss-making-order incidence, and paginated order-level drilldown without personal fields.
 - **Data Quality** — source profile, schema coverage, rule findings by severity and treatment, and the full cleaning audit log.
+
+  ![Data Quality governance summary: severity distribution and order-invariance checks](docs/assets/screenshots/data-quality.png)
+
+  *Data Quality over the same upload: severity summary, grain evidence, and the order-invariance check before analysis.*
 - **Exports** — four governed outputs: sanitized cleaned order items, canonical orders, the data-quality report, and the cleaning report. Raw data is never exportable.
 
 ## Why the numbers are trustworthy
