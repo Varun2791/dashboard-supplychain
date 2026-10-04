@@ -617,7 +617,7 @@ Suggested commit: `test: harden full-file processing and accessibility`
 
 ## Phase 18 — Documentation and portfolio release
 
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
 ### Objective
 
@@ -625,15 +625,15 @@ Publish a reproducible project whose claims can be defended in an interview.
 
 ### Tasks
 
-- [ ] Complete README with problem, scope, screenshots, architecture, setup, tests, and limitations.
-- [ ] Document the dataset source and download steps without redistributing it.
-- [ ] Publish canonical schema and KPI definitions.
-- [ ] Publish data-quality methodology and reference controls.
-- [ ] Add architecture and data-flow diagrams.
-- [ ] Add representative screenshots with no personal data.
-- [ ] Document synthetic-data limitations and prohibited interpretations.
-- [ ] Prepare concise CV, GitHub, and interview descriptions.
-- [ ] Review Git history and release notes.
+- [x] Complete README with problem, scope, screenshots, architecture, setup, tests, and limitations. — `README.md` (Why/What/Views/Run locally/Repository structure/Limitations/Documentation) plus the Phase 18B synthetic-demo fast-start; screenshots under `docs/assets/screenshots/`.
+- [x] Document the dataset source and download steps without redistributing it. — `README.md` "Reference dataset (not included)" (Mendeley Data Version 5, DOI `10.17632/8gx2fvg2k6.5`, CC BY 4.0 label, obtain steps, non-redistribution); ADR-041.
+- [x] Publish canonical schema and KPI definitions. — `docs/canonical-schema.md`, `docs/kpi-contracts.md` (30 backend-owned KPI contracts, ADR-031); schema/API contracts in `docs/api-contract.md`.
+- [x] Publish data-quality methodology and reference controls. — `docs/data-quality-rules.md` (stable `DQ-*` catalogue, ADR-032); reference acceptance controls in `AGENTS.md`, reproduced by the env-gated reference test.
+- [x] Add architecture and data-flow diagrams. — `docs/architecture.md` §6 (lightweight architecture diagram) with the measured resource envelope in §3.
+- [x] Add representative screenshots with no personal data. — `docs/assets/screenshots/` (Overview, Delivery, Data Quality) with defensible terminology and no personal fields.
+- [x] Document synthetic-data limitations and prohibited interpretations. — `README.md` Limitations, ADR-021, and the synthetic-demo disclaimer in the fast-start section.
+- [x] Prepare concise CV, GitHub, and interview descriptions. — `README.md` tagline and Why/What sections serve as the concise project descriptions; the personal CV document itself lives outside the repository by nature.
+- [x] Review Git history and release notes. — History is phase-focused with conventional commits; no release notes exist yet because no release has been cut (consistent with the release boundary below).
 
 ### Exit criteria
 
@@ -645,7 +645,7 @@ Publish a reproducible project whose claims can be defended in an interview.
 
 ### Phase 18A — Reviewer-demo governance + contract (accepted 2026-10-04)
 
-Governance locked in ADR-044 and AGENTS.md; no demo rows created yet.
+Governance locked in ADR-044 and AGENTS.md; demo rows created, tested, promoted, and exact-head CI passed (see 18B).
 
 - [x] Record decision C (bundled synthetic demo + optional DataCo reference) with alternatives A–E.
 - [x] Lock governed path `demo/supply-chain-demo.csv` (verified committable under current ignore rules; no `.gitignore` change).
@@ -659,20 +659,18 @@ Governance locked in ADR-044 and AGENTS.md; no demo rows created yet.
 - [x] Lock future README intent (not yet edited): concise "Try the dashboard with synthetic demo data" subsection pointing at the demo file, stating synthetic/workflow-exercise/non-real-operations; existing DataCo source/DOI section retained.
 - [x] Lock release gate: no public V1 tag/release until Phase 18B reviewer-demo work is accepted, promoted, and exact-head CI passes.
 
-### Phase 18B — Reviewer-demo implementation (IMPLEMENTATION CANDIDATE — HUMAN REVIEW REQUIRED)
+### Phase 18B — Reviewer-demo implementation (COMPLETE — PROMOTED, EXACT-HEAD CI PASSED)
 
-- [x] Create `demo/supply-chain-demo.csv` per the 18A contract; record generation provenance. — Accepted candidate from Phase 18B-1 (SHA-256 `0597dfa4…b963744`, verified byte-identical before and after this task); generation evidence: constructed from schema/contracts with `SYN-` identifiers, DataCo source records not used as generation input.
+- [x] Create `demo/supply-chain-demo.csv` per the 18A contract; record generation provenance. — Promoted artifact (LF-normalized SHA-256 `a1314e72…c9257c5d6bc2`; pre-normalization CRLF identity `0597dfa4…b963744` is historical only); generation evidence: constructed from schema/contracts with `SYN-` identifiers, DataCo source records not used as generation input.
 - [x] Validate synthetic/privacy constraints (SYN- IDs, no PII/precise-geo, marker column present). — Locked by `backend/tests/test_demo_contract.py` (Layers 2–3): all ID namespaces `SYN-`, marker `SYNTHETIC — NOT REAL OPERATIONS` on every row, no direct-PII/precise-geo source headers, item-key uniqueness, order/product/customer invariance.
 - [x] Upload through the real pipeline; require READY with zero blocking DQ issues. — Same module (Layer 5): in-process upload reaches READY with 0 errors and 0 blocking issues.
-- [x] Exercise Overview, Delivery, Commercial, Diagnostics, Data Quality; verify filters have useful populations. — Same module (Layer 9): 30-KPI overview, six-month commercial grouping, late/early/exact delivery populations, all four shipping modes, multi-product/category commercial groups, loss-making evidence, multi-value filter options, and a region filter that coherently narrows scope.
+- [x] Exercise Overview, Delivery, Commercial, Diagnostics, Data Quality; verify filters have useful populations. — Same module (Layer 9): headline-KPI overview (presence + ok-status + finiteness, no frozen response length), six-month commercial grouping, late/early/exact delivery populations, all four shipping modes, multi-product/category commercial groups, loss-making evidence, multi-value filter options, and a region filter that coherently narrows scope.
 - [x] Record actual DQ outcomes; document only observed behavior. — Observed on the accepted candidate: DQ-CAT-005 affected/fixed = 2, DQ-CAT-001 affected/flagged = 2, DQ-NUM-002 affected/flagged = 1, DQ-NUM-003 affected/flagged = 1, zero ERROR/blocking. Incidental accounting (DQ-KEY-002/DQ-DATE-004 counts, evaluated/triggered totals, cleaning detected/unchanged aggregates) deliberately not locked. Marker reconciliation (observed at validation, not a permanent contract — the durable marker contract is the unknown-mapping + canonical quarantine, now test-locked): `Synthetic Demo Marker` maps to canonical `null` / class `unknown` and is absent from canonical analytics; DQ-SCHEMA-003 did not appear in the profiling triggered-rule list or DQ issue records during validation, and no test locks either outcome.
 - [x] Add demo integration/regression tests per the 18A test contract. — `backend/tests/test_demo_contract.py`: 16 tests covering Layers 1–9 plus extreme-row independence (loss story survives without SYN-ITEM-120) and NUM-002 isolation (SYN-ITEM-121 net authoritative); focused run green (16 passed), then full `make check` green (backend 479 passed + 1 env-gated skip, frontend 233 passed; lint/typecheck/format/build clean).
 - [x] Update README with the short fast-start reviewer path; retain DataCo instructions. — `README.md` "Try it with the bundled synthetic demo" (existing `make` commands reused verbatim; synthetic-vs-reference distinction explicit; no performance SLA, no exact synthetic totals); the external DataCo reference section is unchanged.
-- [ ] Run normal repository gates; stop for review before commit (no direct commit from the implementation task).
+- [x] Run normal repository gates and promote after review. — Focused demo-contract suite green (16 passed); full `make check` green (backend 479 passed + 1 env-gated skip, frontend 233 passed; lint/typecheck/format/build clean); CSV line endings normalized CRLF → LF with semantic digest unchanged; committed as `150bdf7`, promoted to origin/main, exact-head CI run `37196896909` success (Backend Python 3.12 + Frontend Node 24 LTS).
 
-Evidence: governed demo exists at `demo/supply-chain-demo.csv` (121 items / 50 orders / 16 customers / 8 products / 6 months; 26-column contract: 18 required + 7 optional + the single unmapped `Synthetic Demo Marker`); canonical outputs coherent (121 items / 50 orders / 16 customers / 8 products, calendar + DQ issues populated, zero excluded rows); release gate unchanged — no V1 tag/release until this candidate is accepted, promoted, and exact-head CI passes.
-
-Suggested commit: `docs: prepare reproducible portfolio release`
+Evidence (closure): governed demo at `demo/supply-chain-demo.csv` (LF-normalized SHA-256 `a1314e72…c9257c5d6bc2`; 121 items / 50 orders / 16 customers / 8 products / 6 months; 26-column contract: 18 required + 7 optional + the single unmapped `Synthetic Demo Marker`); canonical outputs coherent (121 items / 50 orders / 16 customers / 8 products, calendar + DQ issues populated, zero excluded rows); implementation commit `150bdf7` (`feat(demo): add synthetic reviewer dataset`) is on origin/main with push-triggered CI success. No Phase 18 engineering work remains. Phase 18 is complete; any public V1 tag/release is a separate release decision and is not performed by Phase 18 closure.
 
 ---
 
