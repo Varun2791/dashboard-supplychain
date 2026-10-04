@@ -659,16 +659,18 @@ Governance locked in ADR-044 and AGENTS.md; no demo rows created yet.
 - [x] Lock future README intent (not yet edited): concise "Try the dashboard with synthetic demo data" subsection pointing at the demo file, stating synthetic/workflow-exercise/non-real-operations; existing DataCo source/DOI section retained.
 - [x] Lock release gate: no public V1 tag/release until Phase 18B reviewer-demo work is accepted, promoted, and exact-head CI passes.
 
-### Phase 18B — Reviewer-demo implementation (NOT STARTED)
+### Phase 18B — Reviewer-demo implementation (IMPLEMENTATION CANDIDATE — HUMAN REVIEW REQUIRED)
 
-- [ ] Create `demo/supply-chain-demo.csv` per the 18A contract; prove zero DataCo rows copied.
-- [ ] Validate synthetic/privacy constraints (SYN- IDs, no PII/precise-geo, marker column present).
-- [ ] Upload through the real pipeline; require READY with zero blocking DQ issues.
-- [ ] Exercise Overview, Delivery, Commercial, Diagnostics, Data Quality; verify filters have useful populations.
-- [ ] Record actual DQ outcomes; document only observed behavior.
-- [ ] Add demo integration/regression tests per the 18A test contract.
-- [ ] Update README with the short fast-start reviewer path; retain DataCo instructions.
+- [x] Create `demo/supply-chain-demo.csv` per the 18A contract; record generation provenance. — Accepted candidate from Phase 18B-1 (SHA-256 `0597dfa4…b963744`, verified byte-identical before and after this task); generation evidence: constructed from schema/contracts with `SYN-` identifiers, DataCo source records not used as generation input.
+- [x] Validate synthetic/privacy constraints (SYN- IDs, no PII/precise-geo, marker column present). — Locked by `backend/tests/test_demo_contract.py` (Layers 2–3): all ID namespaces `SYN-`, marker `SYNTHETIC — NOT REAL OPERATIONS` on every row, no direct-PII/precise-geo source headers, item-key uniqueness, order/product/customer invariance.
+- [x] Upload through the real pipeline; require READY with zero blocking DQ issues. — Same module (Layer 5): in-process upload reaches READY with 0 errors and 0 blocking issues.
+- [x] Exercise Overview, Delivery, Commercial, Diagnostics, Data Quality; verify filters have useful populations. — Same module (Layer 9): 30-KPI overview, six-month commercial grouping, late/early/exact delivery populations, all four shipping modes, multi-product/category commercial groups, loss-making evidence, multi-value filter options, and a region filter that coherently narrows scope.
+- [x] Record actual DQ outcomes; document only observed behavior. — Observed on the accepted candidate: DQ-CAT-005 affected/fixed = 2, DQ-CAT-001 affected/flagged = 2, DQ-NUM-002 affected/flagged = 1, DQ-NUM-003 affected/flagged = 1, zero ERROR/blocking. Incidental accounting (DQ-KEY-002/DQ-DATE-004 counts, evaluated/triggered totals, cleaning detected/unchanged aggregates) deliberately not locked. Marker reconciliation (observed at validation, not a permanent contract — the durable marker contract is the unknown-mapping + canonical quarantine, now test-locked): `Synthetic Demo Marker` maps to canonical `null` / class `unknown` and is absent from canonical analytics; DQ-SCHEMA-003 did not appear in the profiling triggered-rule list or DQ issue records during validation, and no test locks either outcome.
+- [x] Add demo integration/regression tests per the 18A test contract. — `backend/tests/test_demo_contract.py`: 16 tests covering Layers 1–9 plus extreme-row independence (loss story survives without SYN-ITEM-120) and NUM-002 isolation (SYN-ITEM-121 net authoritative); focused run green (16 passed), then full `make check` green (backend 479 passed + 1 env-gated skip, frontend 233 passed; lint/typecheck/format/build clean).
+- [x] Update README with the short fast-start reviewer path; retain DataCo instructions. — `README.md` "Try it with the bundled synthetic demo" (existing `make` commands reused verbatim; synthetic-vs-reference distinction explicit; no performance SLA, no exact synthetic totals); the external DataCo reference section is unchanged.
 - [ ] Run normal repository gates; stop for review before commit (no direct commit from the implementation task).
+
+Evidence: governed demo exists at `demo/supply-chain-demo.csv` (121 items / 50 orders / 16 customers / 8 products / 6 months; 26-column contract: 18 required + 7 optional + the single unmapped `Synthetic Demo Marker`); canonical outputs coherent (121 items / 50 orders / 16 customers / 8 products, calendar + DQ issues populated, zero excluded rows); release gate unchanged — no V1 tag/release until this candidate is accepted, promoted, and exact-head CI passes.
 
 Suggested commit: `docs: prepare reproducible portfolio release`
 

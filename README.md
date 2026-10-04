@@ -16,6 +16,24 @@ Upload a DataCo-compatible CSV in the browser. The application validates the fil
 
 Raw uploads are never modified. Cleaning produces a new, auditable representation, and every transformation records what was detected, fixed, flagged, excluded, or left unchanged.
 
+## Try it with the bundled synthetic demo
+
+The fastest way to review the full workflow without downloading the reference file:
+
+```sh
+make install          # install frontend (npm ci) + backend (uv sync) dependencies
+# Terminal 1: backend
+make dev-backend      # FastAPI on http://127.0.0.1:8000
+# Terminal 2: frontend
+make preview-frontend # builds the production frontend, then starts the Vite preview
+```
+
+Open the URL printed by Vite (normally http://localhost:4173), upload `demo/supply-chain-demo.csv`, wait for the session to reach READY, then explore Overview, Delivery, Commercial, Diagnostics, and Data Quality.
+
+The bundled file is synthetic reviewer data: it represents no real company or operations, was constructed for reviewer/demo use, and was generated independently from the governed schema and demo contract — DataCo source records were not used as generation input. It uses unmistakably synthetic (`SYN-`) identifiers and is compatible with the governed application schema. It is intentionally small for quick local review — six synthetic months, all four shipping modes, all three customer segments, profitable and loss-making activity, and non-blocking data-quality findings including categorical normalization, a flagged unknown order status, a flagged extreme negative-profit value, and a flagged gross/discount/net mismatch. The synthetic provenance marker is intentionally unmapped and is quarantined from canonical analytics. Demo values exercise the workflow; they are not benchmarks and support no conclusions about any real operation.
+
+The full-scale V1 reference remains the external DataCo file below — the demo is reviewer convenience for quick exploration, not a replacement for the reference/regression dataset.
+
 ## Questions the dashboard can answer
 
 - Which shipping modes are associated with the highest late-shipment rates?
