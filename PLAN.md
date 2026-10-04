@@ -641,6 +641,34 @@ Publish a reproducible project whose claims can be defended in an interview.
 - Portfolio claims match implemented behavior.
 - Screenshots and documentation use defensible terminology.
 - The repository contains no dataset, secret, upload, cache, or personal output.
+- Narrow exception: the single governed synthetic reviewer demo (`demo/supply-chain-demo.csv`, ADR-044) is permitted; it is reviewer-convenience data, not a dataset commitment.
+
+### Phase 18A — Reviewer-demo governance + contract (accepted 2026-10-04)
+
+Governance locked in ADR-044 and AGENTS.md; no demo rows created yet.
+
+- [x] Record decision C (bundled synthetic demo + optional DataCo reference) with alternatives A–E.
+- [x] Lock governed path `demo/supply-chain-demo.csv` (verified committable under current ignore rules; no `.gitignore` change).
+- [x] Lock upload-column contract from implementation (`schema_registry.py`): 18 required source headers — `Order Id`, `Order Item Id`, `Customer Id`, `Product Card Id`, `Product Category Id`, `order date (DateOrders)`, `shipping date (DateOrders)`, `Sales`, `Order Item Discount`, `Order Item Total`, `Benefit per order`, `Order Item Product Price`, `Order Item Quantity`, `Days for shipping (real)`, `Days for shipment (scheduled)`, `Delivery Status`, `Order Status`, `Shipping Mode` — plus optional dims `Customer Segment`, `Order Country`, `Order Region`, `Market`, `Department Name`, `Category Name`, `Product Name`. Month-first timestamps (`%m-%d-%Y %H:%M[:%S]`, `%m-%d-%Y`, DataCo `%m/%d/%Y %H:%M`); closed enums (8 order statuses, 4 shipping modes, 3 segments; cancel signal exactly `Shipping canceled`); `SYN-` identifiers; no personal/precise-geo columns.
+- [x] Lock in-file provenance design: one unmapped `Synthetic Demo Marker` column (`SYNTHETIC — NOT REAL OPERATIONS` every row). Verified non-blocking: DQ-SCHEMA-003 INFO, quarantined to raw-only scope, projected out of canonical analytics.
+- [x] Lock target scale (ranges, not exact counts): 40–60 orders; 100–160 item rows; 6 order months; 6–10 products; 2–3 categories; all 3 segments; all 4 shipping modes; ≥2 markets with multi-region coverage; late/early/exactly-on-schedule, strict-cancelled, and suspected-fraud populations; ≥1 loss-making line/group. Varied, not DataCo-representative; demo totals must not mimic reference controls.
+- [x] Lock grain/invariance contract: unique `Order Item Id`; repeatable `Order Id` with invariant order-level fields; product/customer invariance per DQ-GRAIN-003/004; zero deliberate ERROR conditions; demo must reach READY.
+- [x] Lock delivery/commercial contracts: actual days authoritative, scheduled days for comparison, null lateness for cancelled shipments, no OTIF claims; item-grain gross/discount/net/profit/quantity/price with net authoritative; "recorded net order value", never revenue.
+- [x] Select GOVERNED DEMO with candidate non-blocking behaviors to verify in 18B: whitespace trim (DQ-CAT-005, INFO/fixed), unknown order status (DQ-CAT-001, WARNING/flagged), extreme negative profit (DQ-NUM-003, WARNING/flagged/retained), gross/discount/net mismatch (DQ-NUM-002, WARNING/flagged), unmapped marker column (DQ-SCHEMA-003, INFO/excluded). All verified WARNING/INFO with no canonicalization block in current implementation. Hard exclusions: no duplicate item IDs, no missing critical columns, no unparseable required dates, no invariance conflicts. Cleaning-outcome wording deferred to observed 18B evidence.
+- [x] Select generation strategy C (temp tooling → fixed CSV + integration/contract tests) and record future test contract: governed path, header compatibility, no-PII headers, `SYN-` conventions, approximate scale, real-ingestion READY, no blocking DQ, expected deliberate rules firing, non-empty canonical tables, 4 modes / late-early-exact / cancel-fraud / multi-month / ±profit / multi-value filters represented. Never hard-code demo to DataCo regression controls.
+- [x] Lock future README intent (not yet edited): concise "Try the dashboard with synthetic demo data" subsection pointing at the demo file, stating synthetic/workflow-exercise/non-real-operations; existing DataCo source/DOI section retained.
+- [x] Lock release gate: no public V1 tag/release until Phase 18B reviewer-demo work is accepted, promoted, and exact-head CI passes.
+
+### Phase 18B — Reviewer-demo implementation (NOT STARTED)
+
+- [ ] Create `demo/supply-chain-demo.csv` per the 18A contract; prove zero DataCo rows copied.
+- [ ] Validate synthetic/privacy constraints (SYN- IDs, no PII/precise-geo, marker column present).
+- [ ] Upload through the real pipeline; require READY with zero blocking DQ issues.
+- [ ] Exercise Overview, Delivery, Commercial, Diagnostics, Data Quality; verify filters have useful populations.
+- [ ] Record actual DQ outcomes; document only observed behavior.
+- [ ] Add demo integration/regression tests per the 18A test contract.
+- [ ] Update README with the short fast-start reviewer path; retain DataCo instructions.
+- [ ] Run normal repository gates; stop for review before commit (no direct commit from the implementation task).
 
 Suggested commit: `docs: prepare reproducible portfolio release`
 

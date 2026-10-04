@@ -20,6 +20,7 @@ DataCo is the V1 reference dataset, not the application's permanent schema. Read
 - Do not edit, rename, move, or delete synced project files.
 - Synced source files may be replaced when a new task is created from the ChatGPT project.
 - Never commit raw datasets, uploaded files, generated extracts, credentials, environment files, or local caches.
+- Narrow governed exception (ADR-044 only): the single repository-owned synthetic reviewer demo at `demo/supply-chain-demo.csv` may be committed. It must contain zero DataCo rows, no direct personal fields, no precise geolocation, synthetic (`SYN-`) identifiers only, and explicit synthetic labeling. Reference/regression controls remain tied exclusively to the official external DataCo file; demo values must never be presented as real-company performance. This exception permits that one artifact; it does not authorize any other committed dataset.
 
 ## Source-of-truth order
 

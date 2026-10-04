@@ -1476,6 +1476,73 @@ removes.
 
 ---
 
+## ADR-044 — Bundled synthetic reviewer demo alongside the external DataCo reference
+
+**Status:** Accepted
+**Date:** 2026-10-04
+
+### Context
+
+PP1/PP2 are complete and exact-head CI passed, but a fresh clone cannot
+exercise the upload → profile → validate → clean → analyze → dashboard
+workflow without the developer-local 95.9 MB DataCo file (Mendeley download
+friction; ADR-024 forbids committing or redistributing it). README-only
+acquisition instructions already exist, yet the clean-clone reviewer gap
+remains. Existing test fixtures are unit/adversarial probes (several
+intentionally un-READY-able) and unsuitable as recruiter-facing data.
+
+### Decision
+
+Adopt option C: bundle one small DataCo-compatible synthetic reviewer demo
+at the governed path `demo/supply-chain-demo.csv`, and retain the optional
+existing full external DataCo reference path unchanged. Alternatives
+considered: (A) README-only DataCo acquisition — leaves the gap; (B)
+synthetic demo only — drops the full-scale reference path reviewers may
+want; (C) both — selected; (D) promote a test fixture — misrepresents the
+product; (E) screenshots only — abandons the interactive story.
+
+### Data provenance rules (binding on the demo artifact)
+
+1. Demo rows are constructed from documented schema/contracts, never copied
+   from DataCo. ZERO DataCo rows may appear; never describe it as a "DataCo
+   sample" — it is "DataCo-compatible synthetic demo" data.
+2. Identifiers use the unmistakably synthetic `SYN-` namespace.
+3. No names, emails, passwords, street addresses, precise latitude/longitude,
+   or other direct-personal fields (privacy columns are unmapped and
+   quarantined by construction, so they are omitted entirely).
+4. The demo is explicitly labeled synthetic in-file (via the quarantined
+   `Synthetic Demo Marker` column) and in documentation.
+5. Demo values support no conclusions about any real company, customer,
+   supplier, market, or operation.
+6. Official external DataCo remains the sole V1 reference/regression
+   dataset; existing reference controls must never be replaced with demo
+   controls.
+7. The demo uses the existing upload pipeline unchanged — zero product-code
+   changes.
+
+### Generation strategy
+
+Strategy C (generate once with temporary tooling, commit only the resulting
+fixed CSV, protect it with integration/contract tests) over (A)
+hand-maintained rows (arithmetic/invariance mistake risk at 100–160 rows)
+and (B) a committed generator (unneeded machinery). Smallest maintainable
+approach: fixed artifact + tests that lock headers, scale, READY, and
+deliberate DQ outcomes.
+
+### Consequences
+
+- A clean clone gains a seconds-to-READY reviewer path; full-scale DataCo
+  evidence stays available via the documented external path.
+- AGENTS.md gains a narrow one-artifact exception; ADR-024 prohibition is
+  otherwise unchanged.
+- PLAN.md Phase 18 gains the demo contract, Phase 18B implementation tasks,
+  and a release gate: no public V1 tag until reviewer-demo work is accepted,
+  promoted, and exact-head CI passes.
+- Demo cleaning outcomes must be reported from observed pipeline evidence in
+  Phase 18B, never pre-promised.
+
+---
+
 ## Decision-change template
 
 Copy this section when proposing a new material decision:
